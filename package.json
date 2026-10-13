@@ -1,0 +1,23 @@
+{
+  "name": "enquete-ao-vivo",
+  "version": "1.0.0",
+  "description": "Sistema de enquetes ao vivo com votação em tempo real e pesos por perfil",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.21.0",
+    "qrcode": "^1.5.4",
+    "socket.io": "^4.8.0",
+    "uuid": "^10.0.0"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "devDependencies": {
+    "socket.io-client": "^4.8.4"
+  }
+}
