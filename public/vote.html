@@ -1,0 +1,952 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Votação - Enquete ao Vivo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <script src="https://cdn.socket.io/4.8.0/socket.io.min.js"></script>
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: rgba(255, 255, 255, 0.06);
+      --card-border: rgba(255, 255, 255, 0.12);
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --success: #10b981;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+      -webkit-tap-highlight-color: transparent;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 1.25rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      margin: auto 0;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .header-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      padding: 1.25rem;
+      text-align: center;
+      backdrop-filter: blur(8px);
+    }
+
+    .poll-code-badge {
+      display: inline-block;
+      font-size: 0.75rem;
+      font-weight: 700;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      background: rgba(99, 102, 241, 0.2);
+      color: #a5b4fc;
+      padding: 0.25rem 0.6rem;
+      border-radius: 9999px;
+      margin-bottom: 0.5rem;
+    }
+
+    h1.poll-title {
+      font-size: 1.35rem;
+      font-weight: 800;
+      line-height: 1.3;
+    }
+
+    .user-profile-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      background: rgba(249, 115, 22, 0.15);
+      border: 1px solid rgba(249, 115, 22, 0.3);
+      color: #fb923c;
+      font-size: 0.8rem;
+      font-weight: 600;
+      padding: 0.2rem 0.6rem;
+      border-radius: 9999px;
+      margin-top: 0.5rem;
+    }
+
+    /* Screen containers */
+    .screen {
+      display: none;
+      flex-direction: column;
+      gap: 1.25rem;
+      width: 100%;
+    }
+
+    .screen.active {
+      display: flex;
+    }
+
+    /* Profile Selection Screen */
+    .profile-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 1.75rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      text-align: center;
+    }
+
+    .profile-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 255, 255, 0.12);
+      color: white;
+      padding: 1.1rem;
+      border-radius: 0.75rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s;
+      text-align: center;
+    }
+
+    .profile-btn:active {
+      background: rgba(99, 102, 241, 0.25);
+      border-color: #6366f1;
+      transform: scale(0.98);
+    }
+
+    /* Voting Screen */
+    .question-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.3);
+    }
+
+    .voting-status-indicator {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.85rem;
+      font-weight: 700;
+      padding: 0.35rem 0.75rem;
+      border-radius: 9999px;
+      width: fit-content;
+    }
+
+    .status-open {
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      color: #34d399;
+    }
+
+    .status-closed {
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.4);
+      color: #fca5a5;
+    }
+
+    .question-title {
+      font-size: 1.4rem;
+      font-weight: 800;
+      line-height: 1.35;
+    }
+
+    .options-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.85rem;
+    }
+
+    .option-btn {
+      background: rgba(255, 255, 255, 0.05);
+      border: 2px solid rgba(255, 255, 255, 0.15);
+      color: white;
+      padding: 1.2rem 1rem;
+      border-radius: 0.85rem;
+      font-size: 1.1rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      text-align: left;
+    }
+
+    .option-btn:hover:not(:disabled) {
+      background: rgba(255, 255, 255, 0.1);
+      border-color: rgba(255, 255, 255, 0.3);
+    }
+
+    .option-btn:active:not(:disabled) {
+      transform: scale(0.98);
+    }
+
+    .option-btn.selected {
+      background: rgba(79, 70, 229, 0.25);
+      border-color: #6366f1;
+      box-shadow: 0 0 15px rgba(99, 102, 241, 0.35);
+    }
+
+    .option-btn.locked {
+      background: rgba(16, 185, 129, 0.2);
+      border-color: #10b981;
+      box-shadow: 0 0 15px rgba(16, 185, 129, 0.35);
+    }
+
+    .option-btn:disabled {
+      opacity: 0.7;
+      cursor: not-allowed;
+    }
+
+    /* Confirmation Action Section */
+    .confirm-vote-container {
+      display: flex;
+      flex-direction: column;
+      gap: 0.6rem;
+      margin-top: 0.5rem;
+    }
+
+    .btn-confirm-vote {
+      background: #10b981;
+      color: white;
+      border: none;
+      padding: 1.1rem;
+      border-radius: 0.85rem;
+      font-size: 1.15rem;
+      font-weight: 800;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.6rem;
+      box-shadow: 0 8px 20px rgba(16, 185, 129, 0.35);
+      transition: all 0.2s ease;
+    }
+
+    .btn-confirm-vote:hover:not(:disabled) {
+      background: #059669;
+      transform: translateY(-1px);
+      box-shadow: 0 10px 24px rgba(16, 185, 129, 0.45);
+    }
+
+    .btn-confirm-vote:active:not(:disabled) {
+      transform: translateY(1px);
+    }
+
+    .btn-confirm-vote:disabled {
+      background: #334155;
+      color: #94a3b8;
+      box-shadow: none;
+      cursor: not-allowed;
+      opacity: 0.6;
+    }
+
+    .confirm-notice {
+      font-size: 0.8rem;
+      color: var(--text-muted);
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    /* Locked Vote Card (After confirmation) */
+    .vote-locked-card {
+      background: rgba(16, 185, 129, 0.12);
+      border: 1px solid rgba(16, 185, 129, 0.4);
+      border-radius: 0.85rem;
+      padding: 1.25rem 1rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.35rem;
+      margin-top: 0.5rem;
+    }
+
+    .vote-locked-icon {
+      font-size: 1.75rem;
+    }
+
+    .vote-locked-title {
+      font-size: 1.1rem;
+      font-weight: 800;
+      color: #34d399;
+    }
+
+    .vote-locked-desc {
+      font-size: 0.85rem;
+      color: #cbd5e1;
+    }
+
+    .error-banner {
+      background: rgba(239, 68, 68, 0.2);
+      border: 1px solid #ef4444;
+      color: #fca5a5;
+      padding: 0.75rem;
+      border-radius: 0.5rem;
+      text-align: center;
+      font-size: 0.9rem;
+      display: none;
+    }
+
+    /* Message / Waiting screen */
+    .message-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 2.75rem 1.5rem;
+      text-align: center;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 1.2rem;
+    }
+
+    .waiting-pulse {
+      width: 70px;
+      height: 70px;
+      background: rgba(99, 102, 241, 0.15);
+      border: 2px solid #6366f1;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      animation: pulse 2s infinite ease-in-out;
+    }
+
+    @keyframes pulse {
+      0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0.4); }
+      70% { transform: scale(1.05); box-shadow: 0 0 0 20px rgba(99, 102, 241, 0); }
+      100% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(99, 102, 241, 0); }
+    }
+
+    .spinner {
+      width: 40px;
+      height: 40px;
+      border: 4px solid rgba(255, 255, 255, 0.1);
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Header -->
+    <div class="header-card" id="headerCard">
+      <div class="poll-code-badge" id="badgeCode">CÓDIGO: ------</div>
+      <h1 class="poll-title" id="pollTitleDisplay">Carregando enquete...</h1>
+      <div id="profileBadgeDisplay" class="user-profile-badge" style="display: none;"></div>
+    </div>
+
+    <!-- Error Banner -->
+    <div id="errorBanner" class="error-banner"></div>
+
+    <!-- Screen 1: Loading -->
+    <div class="screen active" id="screenLoading">
+      <div class="message-card">
+        <div class="spinner"></div>
+        <p style="color: var(--text-muted);">Conectando à sessão de votação...</p>
+      </div>
+    </div>
+
+    <!-- Screen 2: Choose Profile -->
+    <div class="screen" id="screenProfile">
+      <div class="profile-card">
+        <div style="font-size: 2.2rem;">👤</div>
+        <h2 style="font-size: 1.3rem;">Identifique o seu papel</h2>
+        <p style="font-size: 0.9rem; color: var(--text-muted);">
+          Esta enquete utiliza perfis de votantes. Selecione como deseja participar:
+        </p>
+        <div id="profilesList" style="display: flex; flex-direction: column; gap: 0.75rem; margin-top: 0.5rem;">
+          <!-- Profiles rendered dynamically -->
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 3: Waiting Screen (Before Presenter Starts) -->
+    <div class="screen" id="screenWaiting">
+      <div class="message-card">
+        <div class="waiting-pulse">⏳</div>
+        <div>
+          <h2 style="font-size: 1.35rem; font-weight: 800; margin-bottom: 0.4rem;">Aguardando o Apresentador</h2>
+          <p style="font-size: 0.85rem; color: #818cf8; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Apresentação não iniciada</p>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5; max-width: 380px;">
+          Fique atento ao telão! A pergunta e as alternativas só serão exibidas assim que o apresentador iniciar a apresentação.
+        </p>
+      </div>
+    </div>
+
+    <!-- Screen 4: Active Question / Voting -->
+    <div class="screen" id="screenQuestion">
+      <div class="question-card">
+        <div id="statusIndicator" class="voting-status-indicator status-open">
+          <span id="statusDot">🟢</span> <span id="statusText">Votação Aberta</span>
+        </div>
+
+        <h2 class="question-title" id="qTitle">Título da pergunta</h2>
+
+        <div class="options-list" id="optionsList">
+          <!-- Option buttons rendered here -->
+        </div>
+
+        <!-- Confirm vote button section -->
+        <div id="confirmVoteContainer" class="confirm-vote-container" style="display: none;">
+          <button id="btnConfirmVote" class="btn-confirm-vote" disabled onclick="confirmVote()">
+            <span>🔒</span> Confirmar Meu Voto
+          </button>
+          <p class="confirm-notice">Após a confirmação, seu voto será gravado e não poderá ser alterado.</p>
+        </div>
+
+        <!-- Locked vote banner -->
+        <div id="voteLockedCard" class="vote-locked-card" style="display: none;">
+          <div class="vote-locked-icon">🔒 ✓</div>
+          <div class="vote-locked-title">Voto Confirmado!</div>
+          <div class="vote-locked-desc">Seu voto foi registrado com sucesso e não pode ser alterado.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Screen 5: Poll Finished (Thank You Screen) -->
+    <div class="screen" id="screenFinished">
+      <div class="message-card">
+        <div style="font-size: 3.5rem;">🎉</div>
+        <h2 style="font-size: 1.4rem; font-weight: 800;">Enquete Finalizada!</h2>
+        <p style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.5;">
+          Muito obrigado pela sua participação! Todos os votos foram computados na apresentação ao vivo.
+        </p>
+        <div style="background: rgba(255, 255, 255, 0.05); padding: 0.75rem 1.25rem; border-radius: 0.5rem; font-size: 0.85rem; color: #a5b4fc;">
+          Sessão concluída com sucesso
+        </div>
+        <a href="/" style="color: #818cf8; text-decoration: none; font-size: 0.9rem; margin-top: 0.5rem; font-weight: 600;">
+          Voltar ao início ➜
+        </a>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const code = window.location.hash.slice(1).trim().toUpperCase();
+    let poll = null;
+    let currentQuestion = null;
+    let selectedOptionId = null;
+    let hasConfirmedVote = false;
+    let isSubmitting = false;
+    let socket = null;
+
+    function getParticipantId() {
+      let pId = localStorage.getItem('poll_participant_id');
+      if (!pId) {
+        pId = 'user_' + Math.random().toString(36).substring(2, 9) + Date.now();
+        localStorage.setItem('poll_participant_id', pId);
+      }
+      return pId;
+    }
+
+    function getProfileId() {
+      if (!poll) return null;
+      return localStorage.getItem('poll_profile_' + poll.id) || null;
+    }
+
+    function hasValidProfileSelected() {
+      if (!poll || !poll.hasProfiles) return true;
+      if (!Array.isArray(poll.profiles) || poll.profiles.length === 0) return true;
+      const pId = getProfileId();
+      return Boolean(pId && poll.profiles.some(p => p.id === pId));
+    }
+
+    function setProfileId(id, name) {
+      localStorage.setItem('poll_profile_' + poll.id, id);
+      showProfileBadge(name);
+      checkReadyToVote();
+    }
+
+    function showProfileBadge(name) {
+      const badge = document.getElementById('profileBadgeDisplay');
+      if (name && poll && poll.hasProfiles) {
+        badge.innerHTML = `<span>Perfil: ${escapeHtml(name)}</span> <button type="button" onclick="changeProfile()" style="background: none; border: none; color: #fb923c; cursor: pointer; font-size: 0.75rem; text-decoration: underline; margin-left: 4px; padding: 0;">trocar</button>`;
+        badge.style.display = 'inline-flex';
+      } else {
+        badge.style.display = 'none';
+      }
+    }
+
+    function changeProfile() {
+      if (hasConfirmedVote) {
+        alert('Seu voto já foi confirmado para esta pergunta e o perfil não pode ser alterado.');
+        return;
+      }
+      localStorage.removeItem('poll_profile_' + poll.id);
+      renderProfileSelection();
+    }
+
+    function showScreen(screenId) {
+      document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+      const target = document.getElementById(screenId);
+      if (target) target.classList.add('active');
+    }
+
+    function showError(msg) {
+      const b = document.getElementById('errorBanner');
+      b.textContent = msg;
+      b.style.display = 'block';
+    }
+
+    function hideError() {
+      document.getElementById('errorBanner').style.display = 'none';
+    }
+
+    async function init() {
+      if (!code) {
+        window.location.href = '/';
+        return;
+      }
+
+      document.getElementById('badgeCode').textContent = `CÓDIGO: ${code}`;
+
+      try {
+        const res = await fetch(`/api/polls/join/${code}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Enquete não encontrada com este código');
+        }
+
+        poll = data;
+        if (poll.currentQuestion) currentQuestion = poll.currentQuestion;
+        document.getElementById('pollTitleDisplay').textContent = poll.title;
+
+        // Check if profiles are needed and not yet selected
+        if (poll.hasProfiles && !hasValidProfileSelected()) {
+          renderProfileSelection();
+        } else {
+          if (poll.hasProfiles && hasValidProfileSelected()) {
+            const pObj = poll.profiles.find(p => p.id === getProfileId());
+            if (pObj) showProfileBadge(pObj.name);
+          }
+          checkReadyToVote();
+        }
+
+        connectSocket();
+      } catch (err) {
+        showScreen('screenLoading');
+        showError(err.message);
+      }
+    }
+
+    function renderProfileSelection() {
+      const list = document.getElementById('profilesList');
+      list.innerHTML = poll.profiles.map(p => `
+        <button class="profile-btn" onclick="selectProfile('${p.id}', '${escapeHtml(p.name)}')">
+          ${escapeHtml(p.name)}
+        </button>
+      `).join('');
+      showScreen('screenProfile');
+    }
+
+    function selectProfile(id, name) {
+      setProfileId(id, name);
+    }
+
+    function checkReadyToVote() {
+      // Caso seja uma enquete com perfis, só chega nas perguntas após selecionar um perfil válido
+      if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+        renderProfileSelection();
+        return;
+      }
+
+      if (poll.status === 'finished') {
+        showScreen('screenFinished');
+        return;
+      }
+
+      const activeQ = currentQuestion || poll.currentQuestion;
+      if (poll.status === 'active' && activeQ) {
+        loadQuestion(activeQ);
+      } else {
+        showScreen('screenWaiting');
+      }
+    }
+
+    function loadQuestion(q) {
+      currentQuestion = q;
+
+      // Se ainda não escolheu perfil em enquete com perfis, não pode ver as perguntas
+      if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+        renderProfileSelection();
+        return;
+      }
+
+      selectedOptionId = null;
+      isSubmitting = false;
+      hideError();
+
+      document.getElementById('qTitle').textContent = q.text;
+
+      // Check if user already confirmed vote for this question in localStorage
+      const voteKey = `voted_${poll.id}_${q.id}`;
+      const savedVotedOpt = localStorage.getItem(voteKey);
+
+      if (savedVotedOpt) {
+        hasConfirmedVote = true;
+        selectedOptionId = savedVotedOpt;
+      } else {
+        hasConfirmedVote = false;
+      }
+
+      updateVotingIndicator(q.votingOpen);
+      renderOptions(q.options, q.votingOpen);
+      updateConfirmSectionUI();
+
+      showScreen('screenQuestion');
+    }
+
+    function updateVotingIndicator(isOpen) {
+      const ind = document.getElementById('statusIndicator');
+      const dot = document.getElementById('statusDot');
+      const text = document.getElementById('statusText');
+
+      if (isOpen) {
+        ind.className = 'voting-status-indicator status-open';
+        dot.textContent = '🟢';
+        text.textContent = 'Votação Aberta';
+      } else {
+        ind.className = 'voting-status-indicator status-closed';
+        dot.textContent = '⚪';
+        text.textContent = 'Votação Fechada';
+      }
+
+      // If user has not confirmed yet, enable/disable options based on isOpen
+      document.querySelectorAll('.option-btn').forEach(btn => {
+        if (hasConfirmedVote || !isOpen) {
+          btn.disabled = true;
+        } else {
+          btn.disabled = false;
+        }
+      });
+
+      const btnConfirm = document.getElementById('btnConfirmVote');
+      if (btnConfirm) {
+        if (!isOpen || hasConfirmedVote || !selectedOptionId) {
+          btnConfirm.disabled = true;
+        } else {
+          btnConfirm.disabled = false;
+        }
+      }
+    }
+
+    function renderOptions(options, isOpen) {
+      const container = document.getElementById('optionsList');
+      container.innerHTML = options.map(opt => {
+        const isSelected = (selectedOptionId === opt.id);
+        const isLocked = isSelected && hasConfirmedVote;
+        let classes = 'option-btn';
+        if (isLocked) classes += ' locked';
+        else if (isSelected) classes += ' selected';
+
+        const disabledAttr = (!isOpen || hasConfirmedVote) ? 'disabled' : '';
+
+        return `
+          <button class="${classes}" id="optBtn_${opt.id}" ${disabledAttr} onclick="selectOption('${opt.id}')">
+            <span>${escapeHtml(opt.text)}</span>
+            <span class="icon-tag">
+              ${isLocked ? '🔒 ✓' : (isSelected ? '✓' : '')}
+            </span>
+          </button>
+        `;
+      }).join('');
+    }
+
+    function selectOption(optionId) {
+      if (hasConfirmedVote || !currentQuestion || !currentQuestion.votingOpen || isSubmitting) return;
+      hideError();
+
+      selectedOptionId = optionId;
+
+      // Update UI selection on buttons
+      document.querySelectorAll('.option-btn').forEach(btn => {
+        btn.classList.remove('selected');
+        const icon = btn.querySelector('.icon-tag');
+        if (icon) icon.textContent = '';
+      });
+
+      const chosen = document.getElementById(`optBtn_${optionId}`);
+      if (chosen) {
+        chosen.classList.add('selected');
+        const icon = chosen.querySelector('.icon-tag');
+        if (icon) icon.textContent = '✓';
+      }
+
+      updateConfirmSectionUI();
+    }
+
+    function updateConfirmSectionUI() {
+      const confirmContainer = document.getElementById('confirmVoteContainer');
+      const lockedCard = document.getElementById('voteLockedCard');
+      const btnConfirm = document.getElementById('btnConfirmVote');
+
+      if (hasConfirmedVote) {
+        confirmContainer.style.display = 'none';
+        lockedCard.style.display = 'flex';
+      } else {
+        lockedCard.style.display = 'none';
+        confirmContainer.style.display = 'flex';
+
+        if (selectedOptionId && currentQuestion && currentQuestion.votingOpen && !isSubmitting) {
+          btnConfirm.disabled = false;
+          btnConfirm.innerHTML = '<span>🔒</span> Confirmar Meu Voto';
+        } else {
+          btnConfirm.disabled = true;
+          btnConfirm.innerHTML = '<span>👆</span> Selecione uma alternativa';
+        }
+      }
+    }
+
+    function confirmVote() {
+      if (!selectedOptionId || hasConfirmedVote || !currentQuestion || !currentQuestion.votingOpen || isSubmitting) return;
+      hideError();
+
+      isSubmitting = true;
+      const btnConfirm = document.getElementById('btnConfirmVote');
+      btnConfirm.disabled = true;
+      btnConfirm.innerHTML = '<span>⏳</span> Confirmando voto...';
+
+      const participantId = getParticipantId();
+      const profileId = getProfileId();
+      const payload = {
+        pollId: poll.id,
+        questionId: currentQuestion.id,
+        optionId: selectedOptionId,
+        participantId,
+        profileId
+      };
+
+      const handleVoteSuccess = () => {
+        isSubmitting = false;
+        hasConfirmedVote = true;
+        const voteKey = `voted_${poll.id}_${currentQuestion.id}`;
+        localStorage.setItem(voteKey, selectedOptionId);
+
+        document.querySelectorAll('.option-btn').forEach(btn => {
+          btn.disabled = true;
+          btn.classList.remove('selected');
+        });
+
+        const chosen = document.getElementById(`optBtn_${selectedOptionId}`);
+        if (chosen) {
+          chosen.classList.add('locked');
+          const icon = chosen.querySelector('.icon-tag');
+          if (icon) icon.textContent = '🔒 ✓';
+        }
+
+        updateConfirmSectionUI();
+      };
+
+      const handleVoteError = (msg) => {
+        isSubmitting = false;
+        btnConfirm.disabled = false;
+        btnConfirm.innerHTML = '<span>🔒</span> Confirmar Meu Voto';
+        showError(msg || 'Não foi possível confirmar o voto.');
+      };
+
+      const fallbackHttpVote = () => {
+        fetch(`/api/polls/${poll.id}/vote`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        })
+        .then(async res => {
+          const data = await res.json().catch(() => ({}));
+          if (res.ok && data.success) {
+            handleVoteSuccess();
+          } else {
+            handleVoteError(data.error || 'Erro ao registrar voto');
+          }
+        })
+        .catch(err => {
+          handleVoteError(err.message || 'Erro de conexão ao enviar voto.');
+        });
+      };
+
+      if (socket && socket.connected) {
+        let ackReceived = false;
+        const timeoutTimer = setTimeout(() => {
+          if (!ackReceived) {
+            fallbackHttpVote();
+          }
+        }, 1500);
+
+        socket.emit('cast-vote', payload, (ack) => {
+          ackReceived = true;
+          clearTimeout(timeoutTimer);
+          if (ack && ack.success) {
+            handleVoteSuccess();
+          } else {
+            handleVoteError(ack && ack.error);
+          }
+        });
+      } else {
+        fallbackHttpVote();
+      }
+    }
+
+    function connectSocket() {
+      try {
+        if (typeof io !== 'function') return;
+        socket = io({
+          transports: ['websocket', 'polling'],
+          timeout: 4000,
+          reconnectionAttempts: 5
+        });
+
+        socket.on('connect', () => {
+          socket.emit('join-poll', { pollId: poll.id, role: 'participant' });
+        });
+
+      socket.on('poll-state', ({ status, currentQuestion: serverQuestion }) => {
+        if (status) poll.status = status;
+        if (serverQuestion) currentQuestion = serverQuestion;
+
+        // Se ainda não escolheu perfil, a tela de perfil permanece prioritária e obrigatória
+        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+          renderProfileSelection();
+          return;
+        }
+
+        if (status === 'finished') {
+          showScreen('screenFinished');
+        } else if (status === 'active' && serverQuestion) {
+          loadQuestion(serverQuestion);
+        } else if (status === 'active' && !serverQuestion) {
+          showScreen('screenWaiting');
+        } else {
+          showScreen('screenWaiting');
+        }
+      });
+
+      socket.on('poll-started', (data) => {
+        poll.status = 'active';
+        const question = data && data.question;
+        if (question) currentQuestion = question;
+
+        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+          renderProfileSelection();
+          return;
+        }
+
+        if (currentQuestion) {
+          loadQuestion(currentQuestion);
+        } else {
+          syncPollStatus();
+        }
+      });
+
+      socket.on('question-changed', ({ question }) => {
+        poll.status = 'active';
+        currentQuestion = question;
+
+        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+          renderProfileSelection();
+          return;
+        }
+
+        loadQuestion(question);
+      });
+
+      socket.on('voting-opened', ({ questionId }) => {
+        if (currentQuestion && currentQuestion.id === questionId) {
+          currentQuestion.votingOpen = true;
+          updateVotingIndicator(true);
+        }
+      });
+
+      socket.on('voting-closed', ({ questionId }) => {
+        if (currentQuestion && currentQuestion.id === questionId) {
+          currentQuestion.votingOpen = false;
+          updateVotingIndicator(false);
+        }
+      });
+
+      socket.on('poll-finished', () => {
+        poll.status = 'finished';
+        showScreen('screenFinished');
+      });
+      } catch (err) {
+        console.warn('Socket.IO connection unavailable, using HTTP sync:', err);
+      }
+    }
+
+    async function syncPollStatus() {
+      try {
+        const res = await fetch(`/api/polls/join/${code}`);
+        if (res.ok) {
+          const freshData = await res.json();
+          poll.status = freshData.status;
+          if (freshData.currentQuestion) currentQuestion = freshData.currentQuestion;
+
+          if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+            renderProfileSelection();
+            return;
+          }
+
+          if (freshData.status === 'finished') {
+            showScreen('screenFinished');
+          } else if (freshData.status === 'active' && freshData.currentQuestion) {
+            loadQuestion(freshData.currentQuestion);
+          }
+        }
+      } catch (e) {
+        // Silent error
+      }
+    }
+
+    // Auto-sync while participant is waiting so they are never stuck
+    setInterval(() => {
+      if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+        return;
+      }
+      const waiting = document.getElementById('screenWaiting');
+      if (waiting && waiting.classList.contains('active')) {
+        syncPollStatus();
+      }
+    }, 2000);
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      return String(text).replace(/[&<>"']/g, m => ({
+        '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;'
+      })[m]);
+    }
+
+    init();
+  </script>
+</body>
+</html>

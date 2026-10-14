@@ -1,0 +1,298 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Enquete ao Vivo - Votação em Tempo Real</title>
+  <meta name="description" content="Sistema de enquetes interativas com resultados em tempo real e pesos por perfil.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 50%, #311042 100%);
+      --card-bg: rgba(255, 255, 255, 0.08);
+      --card-border: rgba(255, 255, 255, 0.15);
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --accent: #06b6d4;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 480px;
+      text-align: center;
+    }
+
+    .logo-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      background: rgba(79, 70, 229, 0.25);
+      border: 1px solid rgba(99, 102, 241, 0.4);
+      padding: 0.4rem 1rem;
+      border-radius: 9999px;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #a5b4fc;
+      margin-bottom: 1.5rem;
+    }
+
+    h1 {
+      font-size: 2.25rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+      line-height: 1.2;
+      margin-bottom: 0.75rem;
+      background: linear-gradient(to right, #ffffff, #cbd5e1);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+
+    p.subtitle {
+      color: var(--text-muted);
+      font-size: 1rem;
+      margin-bottom: 2rem;
+      line-height: 1.5;
+    }
+
+    .join-card {
+      background: var(--card-bg);
+      backdrop-filter: blur(16px);
+      -webkit-backdrop-filter: blur(16px);
+      border: 1px solid var(--card-border);
+      border-radius: 1.25rem;
+      padding: 2rem 1.75rem;
+      box-shadow: 0 20px 40px rgba(0, 0, 0, 0.35);
+      margin-bottom: 2rem;
+    }
+
+    .input-label {
+      display: block;
+      font-size: 0.875rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .code-input {
+      width: 100%;
+      background: rgba(15, 23, 42, 0.6);
+      border: 2px solid rgba(99, 102, 241, 0.3);
+      border-radius: 0.75rem;
+      padding: 1rem;
+      font-size: 1.75rem;
+      font-weight: 800;
+      letter-spacing: 0.3em;
+      text-align: center;
+      color: #ffffff;
+      text-transform: uppercase;
+      outline: none;
+      transition: all 0.2s ease;
+      margin-bottom: 1.25rem;
+    }
+
+    .code-input:focus {
+      border-color: #6366f1;
+      box-shadow: 0 0 0 4px rgba(99, 102, 241, 0.25);
+      background: rgba(15, 23, 42, 0.8);
+    }
+
+    .code-input::placeholder {
+      letter-spacing: 0.1em;
+      color: #475569;
+      font-weight: 600;
+      font-size: 1.25rem;
+    }
+
+    .btn-submit {
+      width: 100%;
+      background: var(--primary);
+      color: white;
+      border: none;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      font-size: 1.125rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      box-shadow: 0 10px 20px rgba(79, 70, 229, 0.3);
+    }
+
+    .btn-submit:hover {
+      background: var(--primary-hover);
+      transform: translateY(-1px);
+      box-shadow: 0 12px 24px rgba(79, 70, 229, 0.4);
+    }
+
+    .btn-submit:active {
+      transform: translateY(1px);
+    }
+
+    .error-msg {
+      margin-top: 1rem;
+      font-size: 0.875rem;
+      color: #f87171;
+      background: rgba(239, 68, 68, 0.1);
+      border: 1px solid rgba(239, 68, 68, 0.2);
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      display: none;
+    }
+
+    .admin-link-card {
+      background: rgba(255, 255, 255, 0.04);
+      border: 1px dashed rgba(255, 255, 255, 0.15);
+      border-radius: 1rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+    }
+
+    .admin-link-card p {
+      font-size: 0.875rem;
+      color: var(--text-muted);
+    }
+
+    .admin-btn {
+      color: #a5b4fc;
+      text-decoration: none;
+      font-size: 0.95rem;
+      font-weight: 600;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.375rem;
+      padding: 0.5rem;
+      border-radius: 0.5rem;
+      background: rgba(99, 102, 241, 0.15);
+      transition: all 0.2s;
+    }
+
+    .admin-btn:hover {
+      background: rgba(99, 102, 241, 0.25);
+      color: #ffffff;
+    }
+
+    footer {
+      margin-top: 2.5rem;
+      font-size: 0.8rem;
+      color: #64748b;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-badge">
+      <span>⚡</span> Votação ao Vivo & Tempo Real
+    </div>
+
+    <h1>Enquete Interativa</h1>
+    <p class="subtitle">Digite o código de 6 dígitos exibido no telão para votar diretamente do seu celular.</p>
+
+    <div class="join-card">
+      <form id="joinForm">
+        <label for="pollCode" class="input-label">Código da Enquete</label>
+        <input
+          type="text"
+          id="pollCode"
+          class="code-input"
+          placeholder="Ex: ABC123"
+          maxlength="6"
+          autocomplete="off"
+          autofocus
+          required
+        />
+        <button type="submit" class="btn-submit" id="submitBtn">
+          Entrar na Enquete ➜
+        </button>
+        <div id="errorMsg" class="error-msg"></div>
+      </form>
+    </div>
+
+    <div class="admin-link-card">
+      <p>É o apresentador ou organizador do evento?</p>
+      <a href="/admin.html" class="admin-btn">
+        <span>⚙️</span> Abrir Painel do Apresentador
+      </a>
+    </div>
+
+    <footer>
+      Sistema de Enquetes com Suporte a Perfis & Pesos Customizados
+    </footer>
+  </div>
+
+  <script>
+    const form = document.getElementById('joinForm');
+    const input = document.getElementById('pollCode');
+    const errorMsg = document.getElementById('errorMsg');
+    const submitBtn = document.getElementById('submitBtn');
+
+    // Auto-uppercase
+    input.addEventListener('input', (e) => {
+      e.target.value = e.target.value.toUpperCase().replace(/[^A-Z0-9]/g, '');
+    });
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const code = input.value.trim().toUpperCase();
+      if (code.length < 4) {
+        showError('Digite o código completo da enquete');
+        return;
+      }
+
+      submitBtn.disabled = true;
+      submitBtn.innerText = 'Verificando...';
+      errorMsg.style.display = 'none';
+
+      try {
+        const res = await fetch(`/api/polls/join/${code}`);
+        const data = await res.json();
+
+        if (!res.ok) {
+          throw new Error(data.error || 'Código de enquete inválido');
+        }
+
+        window.location.href = `/vote.html#${code}`;
+      } catch (err) {
+        showError(err.message || 'Código não encontrado');
+      } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerText = 'Entrar na Enquete ➜';
+      }
+    });
+
+    function showError(msg) {
+      errorMsg.textContent = msg;
+      errorMsg.style.display = 'block';
+    }
+  </script>
+</body>
+</html>

@@ -202,6 +202,7 @@ async function testScenarioRPG() {
   const optCaverna = q2.options[0].id;
   presenter.emit('change-question', { pollId: poll.id, questionId: q2.id });
   presenter.emit('open-voting', { pollId: poll.id, questionId: q2.id });
+  await new Promise(r => setTimeout(r, 100));
 
   // Gato 1 vota em Caverna na Pergunta 2 (esperado peso 5.0)
   await new Promise((resolve, reject) => {

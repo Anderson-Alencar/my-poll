@@ -5,11 +5,14 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "dev": "node --watch server.js"
+    "dev": "node server.js",
+    "build": "echo \"Build complete\"",
+    "lint": "node -c server.js"
   },
   "dependencies": {
     "cors": "^2.8.5",
     "express": "^4.21.0",
+    "firebase": "^13.0.0",
     "qrcode": "^1.5.4",
     "socket.io": "^4.8.0",
     "uuid": "^10.0.0"
@@ -18,6 +21,8 @@
     "node": ">=18.0.0"
   },
   "devDependencies": {
+    "@firebase/eslint-plugin-security-rules": "^0.0.2",
+    "eslint": "^10.12.0",
     "socket.io-client": "^4.8.4"
   }
 }

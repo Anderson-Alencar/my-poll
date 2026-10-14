@@ -1,0 +1,8 @@
+{
+  "name": "Enquete ao Vivo",
+  "description": "Sistema de enquetes ao vivo com votação em tempo real e pesos por perfil",
+  "version": "1.0.0",
+  "capabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

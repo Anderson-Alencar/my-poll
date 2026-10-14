@@ -1,0 +1,91 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // Default-deny global safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // Security primitive helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    // User profile validation
+    function isValidUserProfile(data) {
+      return data.keys().hasAll(['id', 'displayName', 'email', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'displayName', 'email', 'photoURL', 'createdAt']) &&
+        data.id is string && data.id == request.auth.uid &&
+        data.displayName is string && data.displayName.size() > 0 && data.displayName.size() <= 100 &&
+        data.email is string && data.email.size() <= 150 &&
+        (!('photoURL' in data) || (data.photoURL is string && data.photoURL.size() <= 500)) &&
+        data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    // Poll validation
+    function isValidPoll(data) {
+      return data.keys().hasAll(['id', 'title', 'code', 'status', 'creatorId', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'title', 'description', 'code', 'hasProfiles', 'status', 'currentQuestionId', 'creatorId', 'creatorEmail', 'createdAt', 'updatedAt', 'profiles', 'questions']) &&
+        data.id is string && data.id.size() > 0 && data.id.size() <= 64 &&
+        data.title is string && data.title.size() > 0 && data.title.size() <= 200 &&
+        data.code is string && data.code.size() == 6 && data.code.matches('^[A-Z0-9]{6}$') &&
+        data.status in ['draft', 'active', 'finished'] &&
+        data.creatorId is string && data.creatorId == request.auth.uid &&
+        (!('description' in data) || (data.description is string && data.description.size() <= 1000)) &&
+        (!('hasProfiles' in data) || data.hasProfiles is bool) &&
+        (!('currentQuestionId' in data) || data.currentQuestionId == null || (data.currentQuestionId is string && data.currentQuestionId.size() <= 64)) &&
+        (!('creatorEmail' in data) || (data.creatorEmail is string && data.creatorEmail.size() <= 150)) &&
+        (!('profiles' in data) || (data.profiles is list && data.profiles.size() <= 30)) &&
+        (!('questions' in data) || (data.questions is list && data.questions.size() <= 100)) &&
+        data.createdAt is string && data.createdAt.size() <= 64;
+    }
+
+    // User profiles collection
+    match /users/{userId} {
+      allow get: if isOwner(userId);
+      allow list: if false; // No enumeration of users
+      allow create: if isOwner(userId) && isValidUserProfile(incoming());
+      allow update: if isOwner(userId) && isValidUserProfile(incoming()) && incoming().id == existing().id && incoming().createdAt == existing().createdAt;
+      allow delete: if false;
+    }
+
+    // Polls collection
+    match /polls/{pollId} {
+      // Single get: Presenter owner
+      allow get: if isSignedIn() && isValidId(pollId) && existing().creatorId == request.auth.uid;
+
+      // Secure list: forces query where creatorId == request.auth.uid
+      allow list: if isSignedIn() && resource.data.creatorId == request.auth.uid;
+
+      // Create: Authenticated presenter can create poll with matching creatorId
+      allow create: if isSignedIn() && isValidId(pollId) && isValidPoll(incoming());
+
+      // Update: Only owner can update, creatorId and createdAt must remain immutable
+      allow update: if isSignedIn() && isValidId(pollId) &&
+        existing().creatorId == request.auth.uid &&
+        incoming().creatorId == existing().creatorId &&
+        incoming().createdAt == existing().createdAt &&
+        isValidPoll(incoming());
+
+      // Delete: Only owner can delete
+      allow delete: if isSignedIn() && isValidId(pollId) && existing().creatorId == request.auth.uid;
+    }
+  }
+}

@@ -1,0 +1,124 @@
+{
+  "entities": {
+    "UserProfile": {
+      "title": "UserProfile",
+      "description": "Perfil do apresentador autenticado",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID do usuário (Firebase Auth UID)",
+          "maxLength": 128
+        },
+        "displayName": {
+          "type": "string",
+          "description": "Nome de exibição do apresentador",
+          "maxLength": 100
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail do apresentador",
+          "maxLength": 150
+        },
+        "photoURL": {
+          "type": "string",
+          "description": "URL da foto de perfil",
+          "maxLength": 500
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de criação do perfil"
+        }
+      },
+      "required": ["id", "displayName", "email", "createdAt"]
+    },
+    "Poll": {
+      "title": "Poll",
+      "description": "Enquete interativa com perguntas, opções e configurações",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "ID único da enquete",
+          "maxLength": 64
+        },
+        "title": {
+          "type": "string",
+          "description": "Título da enquete",
+          "maxLength": 200
+        },
+        "description": {
+          "type": "string",
+          "description": "Descrição da enquete",
+          "maxLength": 1000
+        },
+        "code": {
+          "type": "string",
+          "description": "Código de acesso com 6 caracteres alfanuméricos",
+          "pattern": "^[A-Z0-9]{6}$",
+          "maxLength": 6
+        },
+        "hasProfiles": {
+          "type": "boolean",
+          "description": "Se a enquete possui perfis com pesos"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["draft", "active", "finished"],
+          "description": "Status da apresentação da enquete"
+        },
+        "currentQuestionId": {
+          "type": "string",
+          "description": "ID da pergunta em exibição",
+          "maxLength": 64
+        },
+        "creatorId": {
+          "type": "string",
+          "description": "UID do apresentador proprietário",
+          "maxLength": 128
+        },
+        "creatorEmail": {
+          "type": "string",
+          "format": "email",
+          "description": "E-mail do apresentador proprietário",
+          "maxLength": 150
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data de criação da enquete"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Data da última modificação"
+        },
+        "profiles": {
+          "type": "array",
+          "description": "Lista de perfis e seus respectivos pesos"
+        },
+        "questions": {
+          "type": "array",
+          "description": "Lista de perguntas e alternativas da enquete"
+        }
+      },
+      "required": ["id", "title", "code", "status", "creatorId", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": {
+        "$ref": "#/entities/UserProfile"
+      },
+      "description": "Perfis dos apresentadores autenticados"
+    },
+    "/polls/{pollId}": {
+      "schema": {
+        "$ref": "#/entities/Poll"
+      },
+      "description": "Enquetes criadas e salvas pelos apresentadores"
+    }
+  }
+}

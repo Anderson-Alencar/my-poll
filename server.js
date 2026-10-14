@@ -60,6 +60,16 @@ function generateCode() {
 }
 
 /**
+ * Normaliza o peso para números inteiros válidos: 1, 2, 3, 4... consecutivamente.
+ * @param {*} val
+ * @returns {number} Inteiro >= 1
+ */
+function normalizeWeight(val) {
+  const num = Math.round(Number(val));
+  return (!isNaN(num) && num >= 1) ? num : 1;
+}
+
+/**
  * Serialize a poll object to JSON-safe structure (converts Maps and excludes votes).
  * @param {Object} poll
  * @returns {Object} JSON-safe poll
@@ -78,7 +88,7 @@ function serializePoll(poll) {
       ? poll.profiles.map(p => ({
           id: p.id,
           name: p.name,
-          weight: p.weight !== undefined ? p.weight : 1.0
+          weight: normalizeWeight(p.weight)
         }))
       : [],
     questions: Array.isArray(poll.questions)
@@ -133,7 +143,7 @@ function calculateResults(question) {
       if (rawCounts.has(vote.optionId)) {
         const raw = rawCounts.get(vote.optionId);
         const weighted = weightedCounts.get(vote.optionId);
-        const weight = typeof vote.weight === 'number' && !isNaN(vote.weight) ? vote.weight : 1.0;
+        const weight = normalizeWeight(vote.weight);
 
         rawCounts.set(vote.optionId, raw + 1);
         weightedCounts.set(vote.optionId, weighted + weight);
@@ -228,22 +238,20 @@ function debounceVoteUpdate(pollId, question) {
 // 1. POST /api/polls - Create poll
 app.post('/api/polls', (req, res) => {
   try {
-    const { title, description = '', hasProfiles = false, profiles = [] } = req.body;
+    const { title, description = '', hasProfiles = false, profiles = [], creatorId = null, creatorEmail = null, id: customId = null, code: customCode = null } = req.body;
 
     if (!title || typeof title !== 'string' || !title.trim()) {
       return res.status(400).json({ error: 'Título é obrigatório' });
     }
 
-    const code = generateCode();
-    const pollId = uuidv4();
+    const code = (customCode && typeof customCode === 'string' && customCode.trim()) ? customCode.trim().toUpperCase() : generateCode();
+    const pollId = customId || uuidv4();
 
     const formattedProfiles = (Boolean(hasProfiles) && Array.isArray(profiles))
       ? profiles.map(p => ({
-          id: uuidv4(),
+          id: p.id || uuidv4(),
           name: String(p.name || '').trim(),
-          weight: typeof p.weight === 'number' && !isNaN(p.weight)
-            ? p.weight
-            : (parseFloat(p.weight) || 1.0)
+          weight: normalizeWeight(p.weight)
         }))
       : [];
 
@@ -255,7 +263,9 @@ app.post('/api/polls', (req, res) => {
       hasProfiles: Boolean(hasProfiles),
       status: 'draft',
       currentQuestionId: null,
-      createdAt: new Date().toISOString(),
+      creatorId: creatorId || null,
+      creatorEmail: creatorEmail || null,
+      createdAt: req.body.createdAt || new Date().toISOString(),
       profiles: formattedProfiles,
       questions: []
     };
@@ -267,6 +277,72 @@ app.post('/api/polls', (req, res) => {
   } catch (err) {
     console.error('Error creating poll:', err);
     return res.status(500).json({ error: 'Erro ao criar enquete' });
+  }
+});
+
+// 1.1 POST /api/polls/sync - Synchronize poll from Firestore to active memory
+app.post('/api/polls/sync', (req, res) => {
+  try {
+    const pollData = req.body;
+    if (!pollData || !pollData.id || !pollData.code) {
+      return res.status(400).json({ error: 'Dados da enquete inválidos para sincronização' });
+    }
+
+    let existingPoll = polls.get(pollData.id);
+    if (!existingPoll) {
+      existingPoll = {
+        id: pollData.id,
+        title: String(pollData.title || '').trim(),
+        description: String(pollData.description || '').trim(),
+        code: String(pollData.code).trim().toUpperCase(),
+        hasProfiles: Boolean(pollData.hasProfiles),
+        status: pollData.status || 'draft',
+        currentQuestionId: pollData.currentQuestionId || null,
+        creatorId: pollData.creatorId || null,
+        creatorEmail: pollData.creatorEmail || null,
+        createdAt: pollData.createdAt || new Date().toISOString(),
+        profiles: Array.isArray(pollData.profiles) ? pollData.profiles.map(p => ({
+          id: p.id || uuidv4(),
+          name: String(p.name || '').trim(),
+          weight: normalizeWeight(p.weight)
+        })) : [],
+        questions: []
+      };
+      polls.set(existingPoll.id, existingPoll);
+      accessCodes.set(existingPoll.code, existingPoll.id);
+    } else {
+      existingPoll.title = String(pollData.title || existingPoll.title).trim();
+      existingPoll.description = String(pollData.description || existingPoll.description).trim();
+      existingPoll.hasProfiles = Boolean(pollData.hasProfiles);
+      if (pollData.creatorId) existingPoll.creatorId = pollData.creatorId;
+      if (pollData.creatorEmail) existingPoll.creatorEmail = pollData.creatorEmail;
+    }
+
+    if (Array.isArray(pollData.questions)) {
+      existingPoll.questions = pollData.questions.map((q, idx) => {
+        const existingQ = (existingPoll.questions || []).find(eq => eq.id === q.id);
+        const votesMap = (existingQ && existingQ.votes instanceof Map) ? existingQ.votes : new Map();
+
+        return {
+          id: q.id || uuidv4(),
+          text: String(q.text || '').trim(),
+          orderNum: q.orderNum || idx + 1,
+          votingOpen: Boolean(q.votingOpen),
+          options: Array.isArray(q.options) ? q.options.map((opt, oIdx) => ({
+            id: opt.id || uuidv4(),
+            text: String(opt.text || '').trim(),
+            orderNum: opt.orderNum || oIdx + 1,
+            weights: opt.weights || {}
+          })) : [],
+          votes: votesMap
+        };
+      });
+    }
+
+    return res.json({ success: true, poll: serializePoll(existingPoll) });
+  } catch (err) {
+    console.error('Error syncing poll:', err);
+    return res.status(500).json({ error: 'Erro ao sincronizar enquete' });
   }
 });
 
@@ -331,6 +407,20 @@ app.put('/api/polls/:id', (req, res) => {
         return res.status(400).json({ error: 'Status inválido. Use draft, active ou finished' });
       }
       poll.status = status;
+
+      if (status === 'active') {
+        if (!poll.currentQuestionId && poll.questions && poll.questions.length > 0) {
+          poll.currentQuestionId = poll.questions[0].id;
+        }
+        const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId) || (poll.questions.length > 0 ? poll.questions[0] : null);
+        io.to(`poll:${poll.id}`).emit('poll-started', {
+          pollId: poll.id,
+          question: activeQ ? serializeQuestion(activeQ) : null
+        });
+      } else if (status === 'finished') {
+        poll.questions.forEach(q => { q.votingOpen = false; });
+        io.to(`poll:${poll.id}`).emit('poll-finished', { pollId: poll.id });
+      }
     }
 
     if (req.body.hasProfiles !== undefined) {
@@ -341,9 +431,7 @@ app.put('/api/polls/:id', (req, res) => {
       poll.profiles = req.body.profiles.map(p => ({
         id: p.id || uuidv4(),
         name: String(p.name || '').trim(),
-        weight: typeof p.weight === 'number' && !isNaN(p.weight)
-          ? p.weight
-          : (parseFloat(p.weight) || 1.0)
+        weight: normalizeWeight(p.weight)
       }));
     }
 
@@ -392,8 +480,7 @@ app.post('/api/polls/:id/questions', (req, res) => {
           const rawWeights = (opt && typeof opt.weights === 'object' && opt.weights !== null) ? opt.weights : {};
           const cleanWeights = {};
           for (const [profId, wVal] of Object.entries(rawWeights)) {
-            const num = parseFloat(wVal);
-            cleanWeights[profId] = (!isNaN(num) && num > 0) ? num : 1.0;
+            cleanWeights[profId] = normalizeWeight(wVal);
           }
 
           return {
@@ -449,8 +536,7 @@ app.put('/api/questions/:questionId', (req, res) => {
         const rawWeights = (opt && typeof opt.weights === 'object' && opt.weights !== null) ? opt.weights : {};
         const cleanWeights = {};
         for (const [profId, wVal] of Object.entries(rawWeights)) {
-          const num = parseFloat(wVal);
-          cleanWeights[profId] = (!isNaN(num) && num > 0) ? num : 1.0;
+          cleanWeights[profId] = normalizeWeight(wVal);
         }
 
         if (opt.id && existingOptionsMap.has(opt.id)) {
@@ -477,6 +563,15 @@ app.put('/api/questions/:questionId', (req, res) => {
         if (!validOptionIds.has(vote.optionId)) {
           question.votes.delete(participantId);
         }
+      }
+    }
+
+    if (req.body.votingOpen !== undefined) {
+      question.votingOpen = Boolean(req.body.votingOpen);
+      if (question.votingOpen) {
+        io.to(`poll:${match.poll.id}`).emit('voting-opened', { questionId: question.id });
+      } else {
+        io.to(`poll:${match.poll.id}`).emit('voting-closed', { questionId: question.id });
       }
     }
 
@@ -596,18 +691,23 @@ app.get('/api/polls/join/:code', (req, res) => {
     }
 
     let currentQuestion = null;
-    if (poll.status === 'active' && poll.currentQuestionId) {
-      const q = poll.questions.find(item => item.id === poll.currentQuestionId);
-      if (q) {
-        currentQuestion = {
-          id: q.id,
-          text: q.text,
-          votingOpen: q.votingOpen,
-          options: q.options.map(opt => ({
-            id: opt.id,
-            text: opt.text
-          }))
-        };
+    if (poll.status === 'active') {
+      if (!poll.currentQuestionId && poll.questions && poll.questions.length > 0) {
+        poll.currentQuestionId = poll.questions[0].id;
+      }
+      if (poll.currentQuestionId) {
+        const q = poll.questions.find(item => item.id === poll.currentQuestionId);
+        if (q) {
+          currentQuestion = {
+            id: q.id,
+            text: q.text,
+            votingOpen: q.votingOpen,
+            options: q.options.map(opt => ({
+              id: opt.id,
+              text: opt.text
+            }))
+          };
+        }
       }
     }
 
@@ -638,16 +738,130 @@ app.get('/api/polls/:id/qrcode', async (req, res) => {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
 
-    const protocol = req.protocol;
-    const host = req.get('host');
+    const forwardedProto = req.headers['x-forwarded-proto'];
+    const protocol = forwardedProto ? forwardedProto.split(',')[0].trim() : req.protocol;
+    const host = req.headers['x-forwarded-host'] || req.get('host');
     const qrContent = `${protocol}://${host}/vote.html#${poll.code}`;
 
-    const dataUrl = await QRCode.toDataURL(qrContent);
+    const dataUrl = await QRCode.toDataURL(qrContent, {
+      margin: 2,
+      scale: 8,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    });
 
-    return res.json({ dataUrl });
+    return res.json({ dataUrl, url: qrContent });
   } catch (err) {
     console.error('Error generating QR code:', err);
     return res.status(500).json({ error: 'Erro ao gerar QR Code' });
+  }
+});
+
+// Helper to register vote (shared by Socket.IO and HTTP fallback)
+function registerVote({ pollId, questionId, optionId, participantId, profileId }) {
+  if (!pollId || !questionId || !optionId || !participantId) {
+    return { success: false, error: 'Dados do voto incompletos' };
+  }
+
+  const poll = polls.get(pollId);
+  if (!poll) {
+    return { success: false, error: 'Enquete não encontrada no servidor' };
+  }
+
+  const question = poll.questions.find(q => q.id === questionId);
+  if (!question) {
+    return { success: false, error: 'Pergunta não encontrada' };
+  }
+
+  if (!question.votingOpen) {
+    return { success: false, error: 'Votação fechada para esta pergunta' };
+  }
+
+  // Regra: Uma vez confirmado o voto pelo participante, o voto não poderá ser alterado
+  if (question.votes.has(participantId)) {
+    return { success: false, error: 'Seu voto já foi confirmado e não pode ser alterado.' };
+  }
+
+  const option = question.options.find(o => o.id === optionId);
+  if (!option) {
+    return { success: false, error: 'Opção de voto inválida' };
+  }
+
+  let weight = 1;
+  let validProfileId = null;
+
+  if (poll.hasProfiles && profileId) {
+    const profile = poll.profiles.find(p => p.id === profileId);
+    if (profile) {
+      validProfileId = profile.id;
+      if (option.weights && option.weights[profile.id] !== undefined) {
+        weight = normalizeWeight(option.weights[profile.id]);
+      } else if (profile.weight !== undefined) {
+        weight = normalizeWeight(profile.weight);
+      }
+    }
+  }
+
+  question.votes.set(participantId, {
+    optionId,
+    profileId: validProfileId,
+    weight,
+    createdAt: new Date().toISOString()
+  });
+
+  // Debounce emission of vote-updated event to WebSocket listeners
+  debounceVoteUpdate(pollId, question);
+
+  return { success: true };
+}
+
+// 13. POST /api/polls/:id/vote - HTTP vote endpoint for serverless environments (Vercel)
+app.post('/api/polls/:id/vote', (req, res) => {
+  try {
+    const pollId = req.params.id;
+    const { questionId, optionId, participantId, profileId } = req.body || {};
+    const result = registerVote({ pollId, questionId, optionId, participantId, profileId });
+    if (!result.success) {
+      return res.status(400).json(result);
+    }
+    return res.json(result);
+  } catch (err) {
+    console.error('Error handling HTTP vote:', err);
+    return res.status(500).json({ success: false, error: 'Erro interno ao registrar voto' });
+  }
+});
+
+// 14. PUT /api/polls/:id/status - Update poll status directly
+app.put('/api/polls/:id/status', (req, res) => {
+  try {
+    const poll = polls.get(req.params.id);
+    if (!poll) {
+      return res.status(404).json({ error: 'Enquete não encontrada' });
+    }
+    const { status } = req.body || {};
+    if (!['draft', 'active', 'finished'].includes(status)) {
+      return res.status(400).json({ error: 'Status inválido. Use draft, active ou finished' });
+    }
+    poll.status = status;
+    if (status === 'active') {
+      if (!poll.currentQuestionId && poll.questions.length > 0) {
+        poll.currentQuestionId = poll.questions[0].id;
+      }
+      const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId);
+      io.to(`poll:${poll.id}`).emit('poll-started', {
+        pollId: poll.id,
+        question: activeQ ? serializeQuestion(activeQ) : null
+      });
+    } else if (status === 'finished') {
+      poll.questions.forEach(q => { q.votingOpen = false; });
+      io.to(`poll:${poll.id}`).emit('poll-finished', { pollId: poll.id });
+    }
+    return res.json(serializePoll(poll));
+  } catch (err) {
+    console.error('Error updating poll status:', err);
+    return res.status(500).json({ error: 'Erro ao atualizar status da enquete' });
   }
 });
 
@@ -691,6 +905,23 @@ io.on('connection', socket => {
 
       const count = participantCounts.has(pollId) ? participantCounts.get(pollId).size : 0;
       io.to(`poll:${pollId}`).emit('participant-count', { count });
+
+      // Emit current poll state to the newly joined socket so it never stays stuck
+      const currentPollObj = polls.get(pollId);
+      if (currentPollObj) {
+        if (currentPollObj.status === 'active' && !currentPollObj.currentQuestionId && currentPollObj.questions && currentPollObj.questions.length > 0) {
+          currentPollObj.currentQuestionId = currentPollObj.questions[0].id;
+        }
+        const activeQ = (currentPollObj.status === 'active' && currentPollObj.currentQuestionId)
+          ? currentPollObj.questions.find(q => q.id === currentPollObj.currentQuestionId)
+          : null;
+
+        socket.emit('poll-state', {
+          pollId: currentPollObj.id,
+          status: currentPollObj.status,
+          currentQuestion: activeQ ? serializeQuestion(activeQ) : null
+        });
+      }
     } catch (err) {
       console.error('Error in join-poll:', err);
       socket.emit('error', { message: 'Erro ao ingressar na enquete' });
@@ -700,88 +931,9 @@ io.on('connection', socket => {
   // cast-vote: { pollId, questionId, optionId, participantId, profileId? } with ack callback
   socket.on('cast-vote', (data, callback) => {
     try {
-      const { pollId, questionId, optionId, participantId, profileId } = data || {};
-
-      if (!pollId || !questionId || !optionId || !participantId) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Dados do voto incompletos' });
-        }
-        return;
-      }
-
-      const poll = polls.get(pollId);
-      if (!poll) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Enquete não encontrada' });
-        }
-        return;
-      }
-
-      const question = poll.questions.find(q => q.id === questionId);
-      if (!question) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Pergunta não encontrada' });
-        }
-        return;
-      }
-
-      if (!question.votingOpen) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Votação fechada para esta pergunta' });
-        }
-        return;
-      }
-
-      // Regra: Uma vez confirmado o voto pelo participante, o voto não poderá ser alterado
-      if (question.votes.has(participantId)) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Seu voto já foi confirmado e não pode ser alterado.' });
-        }
-        return;
-      }
-
-      const option = question.options.find(o => o.id === optionId);
-      if (!option) {
-        if (typeof callback === 'function') {
-          return callback({ success: false, error: 'Opção de voto inválida' });
-        }
-        return;
-      }
-
-      // Determine profile weight:
-      // Prioridade: peso definido para a opção escolhida com este perfil (option.weights[profileId])
-      // Fallback: peso global do perfil se existir (profile.weight)
-      // Padrão: 1.0 (voto normal)
-      let weight = 1.0;
-      let validProfileId = null;
-
-      if (poll.hasProfiles && profileId) {
-        const profile = poll.profiles.find(p => p.id === profileId);
-        if (profile) {
-          validProfileId = profile.id;
-          if (option.weights && option.weights[profile.id] !== undefined) {
-            const optWeight = parseFloat(option.weights[profile.id]);
-            weight = (!isNaN(optWeight) && optWeight > 0) ? optWeight : 1.0;
-          } else if (profile.weight !== undefined) {
-            const profWeight = parseFloat(profile.weight);
-            weight = (!isNaN(profWeight) && profWeight > 0) ? profWeight : 1.0;
-          }
-        }
-      }
-
-      // Store vote (replaces previous vote if participantId already voted)
-      question.votes.set(participantId, {
-        optionId,
-        profileId: validProfileId,
-        weight,
-        createdAt: new Date().toISOString()
-      });
-
-      // Debounce emission of vote-updated event
-      debounceVoteUpdate(pollId, question);
-
+      const result = registerVote(data || {});
       if (typeof callback === 'function') {
-        callback({ success: true });
+        callback(result);
       }
     } catch (err) {
       console.error('Error handling cast-vote:', err);
@@ -884,8 +1036,12 @@ io.on('connection', socket => {
 
       let question = null;
       if (poll.questions && poll.questions.length > 0) {
-        poll.currentQuestionId = poll.questions[0].id;
-        question = serializeQuestion(poll.questions[0]);
+        if (!poll.currentQuestionId) {
+          poll.currentQuestionId = poll.questions[0].id;
+        }
+        const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId) || poll.questions[0];
+        poll.currentQuestionId = activeQ.id;
+        question = serializeQuestion(activeQ);
       } else {
         poll.currentQuestionId = null;
       }
@@ -945,23 +1101,31 @@ io.on('connection', socket => {
 // Start Server
 // ==========================================
 
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.APP_PORT || process.env.PORT || 3000;
 
-server.listen(PORT, () => {
-  console.log(`Servidor rodando em http://localhost:${PORT}`);
-});
+// Only listen when running standalone (node server.js), not when required by api/index.js or in serverless (e.g. Vercel)
+if (require.main === module && !process.env.VERCEL) {
+  server.listen(PORT, '0.0.0.0', () => {
+    console.log(`Servidor rodando em http://0.0.0.0:${PORT}`);
+  });
+}
 
-// Export server components for testing or modular usage
-module.exports = {
-  app,
+// Export Express app directly as the root export for Vercel Serverless Function compatibility
+module.exports = app;
+
+// Attach helper references and server components to app for testing or modular usage
+Object.assign(app, {
   server,
   io,
   polls,
   accessCodes,
   participantCounts,
   generateCode,
+  normalizeWeight,
   serializePoll,
   serializeQuestion,
   calculateResults,
-  findPollByQuestionId
-};
+  findPollByQuestionId,
+  registerVote
+});
+

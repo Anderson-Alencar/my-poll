@@ -1,0 +1,1687 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Painel do Apresentador - Enquete ao Vivo</title>
+  <meta name="description" content="Gerenciamento de enquetes ao vivo com autenticação, persistência na nuvem e suporte a perfis e pesos.">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0b0f19;
+      --card-bg: #151d2e;
+      --card-border: #243048;
+      --primary: #4f46e5;
+      --primary-hover: #4338ca;
+      --success: #10b981;
+      --danger: #ef4444;
+      --text: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
+
+    header {
+      background: #111827;
+      border-bottom: 1px solid var(--card-border);
+      padding: 1rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+      text-decoration: none;
+      color: var(--text);
+      font-weight: 800;
+      font-size: 1.25rem;
+    }
+
+    .brand span {
+      color: #818cf8;
+    }
+
+    .header-actions {
+      display: flex;
+      gap: 0.75rem;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+
+    .user-pill {
+      display: flex;
+      align-items: center;
+      gap: 0.6rem;
+      background: rgba(15, 23, 42, 0.8);
+      border: 1px solid #334155;
+      padding: 0.35rem 0.8rem;
+      border-radius: 9999px;
+    }
+
+    .user-avatar {
+      width: 28px;
+      height: 28px;
+      border-radius: 50%;
+      object-fit: cover;
+      background: #4f46e5;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 0.75rem;
+      font-weight: 700;
+      color: white;
+    }
+
+    .user-info-text {
+      display: flex;
+      flex-direction: column;
+      line-height: 1.1;
+      text-align: left;
+    }
+
+    .user-name {
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+
+    .user-email {
+      font-size: 0.7rem;
+      color: #94a3b8;
+    }
+
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      padding: 0.6rem 1.1rem;
+      border-radius: 0.5rem;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+      text-decoration: none;
+      border: 1px solid transparent;
+      transition: all 0.2s;
+    }
+
+    .btn-primary {
+      background: var(--primary);
+      color: white;
+    }
+    .btn-primary:hover {
+      background: var(--primary-hover);
+    }
+
+    .btn-secondary {
+      background: #1f2937;
+      color: var(--text);
+      border-color: #374151;
+    }
+    .btn-secondary:hover {
+      background: #374151;
+    }
+
+    .btn-success {
+      background: var(--success);
+      color: white;
+    }
+    .btn-success:hover {
+      background: #059669;
+    }
+
+    .btn-danger {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border-color: rgba(239, 68, 68, 0.3);
+    }
+    .btn-danger:hover {
+      background: rgba(239, 68, 68, 0.3);
+    }
+
+    .btn-sm {
+      padding: 0.35rem 0.65rem;
+      font-size: 0.8rem;
+    }
+
+    .btn-google {
+      background: white;
+      color: #0f172a;
+      border-color: #e2e8f0;
+      font-weight: 700;
+    }
+    .btn-google:hover {
+      background: #f8fafc;
+    }
+
+    main {
+      flex: 1;
+      max-width: 1200px;
+      width: 100%;
+      margin: 0 auto;
+      padding: 2rem 1.5rem;
+    }
+
+    .section-title {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 1.25rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    /* Friendly Auth Gate Card */
+    .auth-gate-card {
+      background: linear-gradient(180deg, #182235 0%, #111726 100%);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      border-radius: 1.5rem;
+      padding: 3rem 2.25rem;
+      text-align: center;
+      max-width: 480px;
+      margin: 3rem auto;
+      box-shadow: 0 25px 60px rgba(0, 0, 0, 0.45), 0 0 40px rgba(79, 70, 229, 0.08);
+      position: relative;
+      overflow: hidden;
+    }
+
+    .auth-gate-card::before {
+      content: '';
+      position: absolute;
+      top: 0;
+      left: 0;
+      right: 0;
+      height: 4px;
+      background: linear-gradient(90deg, #6366f1, #818cf8, #a855f7);
+    }
+
+    .auth-icon-badge {
+      width: 64px;
+      height: 64px;
+      margin: 0 auto 1.25rem;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(99, 102, 241, 0.05) 70%);
+      border: 1px solid rgba(129, 140, 248, 0.35);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      box-shadow: 0 8px 20px rgba(79, 70, 229, 0.2);
+    }
+
+    .auth-welcome-tag {
+      display: inline-block;
+      font-size: 0.775rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #818cf8;
+      background: rgba(99, 102, 241, 0.12);
+      border: 1px solid rgba(99, 102, 241, 0.25);
+      padding: 0.25rem 0.8rem;
+      border-radius: 9999px;
+      margin-bottom: 0.75rem;
+    }
+
+    .auth-title {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin-bottom: 0.5rem;
+      color: white;
+      letter-spacing: -0.01em;
+      line-height: 1.25;
+    }
+
+    .auth-desc {
+      color: var(--text-muted);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 1.75rem;
+      max-width: 400px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+
+    /* Auth Tabs */
+    .auth-tabs {
+      display: flex;
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 0.75rem;
+      padding: 0.25rem;
+      margin-bottom: 1.5rem;
+      gap: 0.25rem;
+    }
+
+    .auth-tab-btn {
+      flex: 1;
+      padding: 0.55rem 1rem;
+      border-radius: 0.5rem;
+      background: transparent;
+      border: none;
+      color: #94a3b8;
+      font-weight: 600;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+
+    .auth-tab-btn.active {
+      background: #1e293b;
+      color: #ffffff;
+      box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    }
+
+    .auth-tab-btn:hover:not(.active) {
+      color: #f1f5f9;
+    }
+
+    /* Auth Form */
+    .auth-form {
+      display: flex;
+      flex-direction: column;
+      gap: 1.1rem;
+      text-align: left;
+    }
+
+    .auth-field {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .auth-field-label {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.85rem;
+      font-weight: 600;
+      color: #cbd5e1;
+      margin-bottom: 0.4rem;
+    }
+
+    .auth-forgot-link {
+      font-size: 0.775rem;
+      color: #818cf8;
+      text-decoration: none;
+      cursor: pointer;
+      transition: color 0.15s;
+    }
+
+    .auth-forgot-link:hover {
+      color: #a5b4fc;
+      text-decoration: underline;
+    }
+
+    .auth-input-wrapper {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+
+    .auth-input-icon {
+      position: absolute;
+      left: 0.85rem;
+      font-size: 1rem;
+      color: #64748b;
+      pointer-events: none;
+      user-select: none;
+    }
+
+    .auth-input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      padding-left: 2.5rem;
+      background: #0b1120;
+      border: 1px solid #293548;
+      border-radius: 0.65rem;
+      color: #f8fafc;
+      font-size: 0.95rem;
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .auth-input:focus {
+      outline: none;
+      border-color: #6366f1;
+      box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.2);
+      background: #0f172a;
+    }
+
+    .auth-input::placeholder {
+      color: #475569;
+    }
+
+    .btn-auth-submit {
+      width: 100%;
+      padding: 0.85rem 1.5rem;
+      border-radius: 0.65rem;
+      background: linear-gradient(135deg, #4f46e5 0%, #6366f1 100%);
+      color: white;
+      font-size: 1rem;
+      font-weight: 700;
+      border: none;
+      cursor: pointer;
+      transition: all 0.2s ease;
+      box-shadow: 0 4px 14px rgba(79, 70, 229, 0.35);
+      margin-top: 0.35rem;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+    }
+
+    .btn-auth-submit:hover {
+      background: linear-gradient(135deg, #4338ca 0%, #4f46e5 100%);
+      transform: translateY(-1px);
+      box-shadow: 0 6px 20px rgba(79, 70, 229, 0.45);
+    }
+
+    .btn-auth-submit:active {
+      transform: translateY(0);
+    }
+
+    .btn-auth-submit:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    /* Auth Divider */
+    .auth-divider {
+      display: flex;
+      align-items: center;
+      margin: 1.5rem 0 1.25rem;
+      color: #64748b;
+      font-size: 0.775rem;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-weight: 600;
+    }
+
+    .auth-divider::before,
+    .auth-divider::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: #1e293b;
+    }
+
+    .auth-divider span {
+      padding: 0 0.85rem;
+    }
+
+    .btn-google-large {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.85rem;
+      width: 100%;
+      padding: 0.85rem 1.5rem;
+      border-radius: 0.65rem;
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #0f172a;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      cursor: pointer;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.15);
+      transition: all 0.2s ease;
+      box-sizing: border-box;
+    }
+
+    .btn-google-large:hover {
+      background: #f8fafc;
+      transform: translateY(-2px);
+      box-shadow: 0 8px 25px rgba(0, 0, 0, 0.25);
+    }
+
+    .btn-google-large:active {
+      transform: translateY(0);
+    }
+
+    .auth-error-alert {
+      display: none;
+      margin-top: 1.25rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      background: rgba(239, 68, 68, 0.15);
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      color: #fca5a5;
+      font-size: 0.875rem;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    .auth-success-alert {
+      display: none;
+      margin-top: 1.25rem;
+      padding: 0.75rem 1rem;
+      border-radius: 0.5rem;
+      background: rgba(16, 185, 129, 0.15);
+      border: 1px solid rgba(16, 185, 129, 0.35);
+      color: #6ee7b7;
+      font-size: 0.875rem;
+      text-align: center;
+      line-height: 1.4;
+    }
+
+    /* Polls grid */
+    .polls-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 1.5rem;
+    }
+
+    .poll-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 0.75rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1rem;
+      transition: transform 0.2s, border-color 0.2s;
+    }
+
+    .poll-card:hover {
+      border-color: #4f46e5;
+      transform: translateY(-2px);
+    }
+
+    .poll-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.5rem;
+    }
+
+    .poll-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: var(--text);
+    }
+
+    .badge {
+      display: inline-block;
+      padding: 0.2rem 0.5rem;
+      border-radius: 0.25rem;
+      font-size: 0.75rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .badge-draft { background: #374151; color: #9ca3af; }
+    .badge-active { background: rgba(16, 185, 129, 0.2); color: #34d399; }
+    .badge-finished { background: rgba(99, 102, 241, 0.2); color: #a5b4fc; }
+    .badge-profile { background: rgba(249, 115, 22, 0.2); color: #fb923c; }
+
+    .poll-meta {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      display: flex;
+      flex-direction: column;
+      gap: 0.35rem;
+    }
+
+    .poll-code-tag {
+      font-family: monospace;
+      background: #0f172a;
+      padding: 0.2rem 0.4rem;
+      border-radius: 0.25rem;
+      color: #818cf8;
+      font-weight: 700;
+      letter-spacing: 0.05em;
+    }
+
+    .poll-actions {
+      display: flex;
+      gap: 0.5rem;
+      margin-top: auto;
+      padding-top: 0.75rem;
+      border-top: 1px solid var(--card-border);
+      flex-wrap: wrap;
+    }
+
+    /* Detail View */
+    .detail-view {
+      display: none;
+    }
+    .detail-view.active {
+      display: block;
+    }
+
+    .detail-header-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      margin-bottom: 2rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .detail-top-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      flex-wrap: wrap;
+      gap: 1rem;
+    }
+
+    .detail-info h1 {
+      font-size: 1.75rem;
+      font-weight: 800;
+      margin-bottom: 0.35rem;
+    }
+
+    .detail-share-box {
+      display: flex;
+      gap: 1.5rem;
+      align-items: center;
+      background: rgba(15, 23, 42, 0.6);
+      border: 1px solid #334155;
+      padding: 1rem;
+      border-radius: 0.75rem;
+      flex-wrap: wrap;
+    }
+
+    .qr-img {
+      width: 100px;
+      height: 100px;
+      border-radius: 0.5rem;
+      background: white;
+      padding: 4px;
+    }
+
+    .questions-card {
+      background: var(--card-bg);
+      border: 1px solid var(--card-border);
+      border-radius: 1rem;
+      padding: 1.5rem;
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+    }
+
+    .question-item {
+      background: #0f172a;
+      border: 1px solid #1e293b;
+      border-radius: 0.75rem;
+      padding: 1.25rem;
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+    }
+
+    .question-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .option-pill {
+      background: #1e293b;
+      padding: 0.5rem 0.75rem;
+      border-radius: 0.5rem;
+      margin-top: 0.25rem;
+      font-size: 0.9rem;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+
+    .weight-chip {
+      font-size: 0.75rem;
+      padding: 0.2rem 0.45rem;
+      background: rgba(249, 115, 22, 0.2);
+      color: #fb923c;
+      border-radius: 0.25rem;
+      font-weight: 600;
+    }
+
+    .empty-state {
+      text-align: center;
+      padding: 3rem 1rem;
+      color: var(--text-muted);
+    }
+
+    /* Modal styles */
+    .modal-backdrop {
+      display: none;
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0, 0, 0, 0.75);
+      z-index: 1000;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+    }
+
+    .modal-backdrop.open {
+      display: flex;
+    }
+
+    .modal {
+      background: #1e293b;
+      border: 1px solid #334155;
+      border-radius: 1rem;
+      max-width: 600px;
+      width: 100%;
+      padding: 2rem;
+      max-height: 90vh;
+      overflow-y: auto;
+    }
+
+    .modal h2 {
+      margin-bottom: 1.25rem;
+      font-size: 1.35rem;
+      font-weight: 700;
+    }
+
+    .form-group label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin-bottom: 0.4rem;
+      color: #cbd5e1;
+    }
+
+    .form-control {
+      width: 100%;
+      padding: 0.65rem 0.85rem;
+      background: #0f172a;
+      border: 1px solid #334155;
+      border-radius: 0.5rem;
+      color: white;
+      font-size: 0.95rem;
+    }
+
+    .form-control:focus {
+      outline: none;
+      border-color: #6366f1;
+    }
+  </style>
+</head>
+<body>
+  <header>
+    <a href="/admin.html" class="brand">
+      <span>📊</span> Painel do Apresentador
+    </a>
+    <div class="header-actions">
+      <a href="/index.html" class="btn btn-secondary btn-sm">Portal de Entrada ➜</a>
+      
+      <!-- Presenter User Section -->
+      <div id="userHeaderSection" style="display: none;" class="user-pill">
+        <div id="userAvatarContainer" class="user-avatar">A</div>
+        <div class="user-info-text">
+          <span id="userName" class="user-name">Apresentador</span>
+          <span id="userEmail" class="user-email">apresentador@email.com</span>
+        </div>
+        <button id="btnLogout" class="btn btn-secondary btn-sm" style="padding: 0.25rem 0.5rem; margin-left: 0.35rem;">Sair</button>
+      </div>
+
+      <button id="btnLoginHeader" class="btn btn-google btn-sm" style="display: none;">
+        <span>🔑</span> Entrar com Google
+      </button>
+
+      <button id="btnNewPollHeader" class="btn btn-primary btn-sm" style="display: none;" onclick="openNewPollModal()">+ Nova Enquete</button>
+    </div>
+  </header>
+
+  <main>
+    <!-- Screen 1: Login Gate (If not authenticated) -->
+    <div id="loginGate" class="auth-gate-card" style="display: none;">
+      <div class="auth-icon-badge">👋</div>
+      <div class="auth-welcome-tag">Área do Apresentador</div>
+      <h1 class="auth-title">Bem-vindo ao Painel</h1>
+      <p class="auth-desc">
+        Acesse sua conta para criar, personalizar e conduzir suas apresentações interativas ao vivo.
+      </p>
+
+      <!-- Auth Mode Tabs -->
+      <div class="auth-tabs">
+        <button type="button" id="tabLogin" class="auth-tab-btn active">Entrar</button>
+        <button type="button" id="tabRegister" class="auth-tab-btn">Criar Conta</button>
+      </div>
+
+      <!-- Email & Password Form -->
+      <form id="authEmailForm" class="auth-form" onsubmit="return false;" novalidate>
+        <div id="authNameGroup" class="auth-field" style="display: none;">
+          <label class="auth-field-label" for="authNameInput">Seu Nome / Apelido</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">👤</span>
+            <input 
+              type="text" 
+              id="authNameInput" 
+              class="auth-input" 
+              placeholder="Ex: Prof. Carlos ou Maria" 
+              autocomplete="name"
+            />
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <label class="auth-field-label" for="authEmailInput">E-mail</label>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">✉️</span>
+            <input 
+              type="email" 
+              id="authEmailInput" 
+              class="auth-input" 
+              placeholder="seu.email@exemplo.com" 
+              required 
+              autocomplete="email"
+            />
+          </div>
+        </div>
+
+        <div class="auth-field">
+          <div class="auth-field-label">
+            <label for="authPasswordInput">Senha</label>
+            <a href="javascript:void(0)" id="btnForgotPassword" class="auth-forgot-link">Esqueceu a senha?</a>
+          </div>
+          <div class="auth-input-wrapper">
+            <span class="auth-input-icon">🔒</span>
+            <input 
+              type="password" 
+              id="authPasswordInput" 
+              class="auth-input" 
+              placeholder="Digite sua senha" 
+              required 
+              autocomplete="current-password"
+            />
+          </div>
+        </div>
+
+        <button type="submit" id="btnSubmitEmailAuth" class="btn-auth-submit">
+          <span id="btnSubmitAuthText">Entrar no Painel</span>
+        </button>
+      </form>
+
+      <div class="auth-divider">
+        <span>ou continue com</span>
+      </div>
+
+      <button id="btnLoginGate" type="button" class="btn-google-large">
+        <svg width="20" height="20" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"/></svg>
+        <span>Continuar com o Google</span>
+      </button>
+
+      <div id="loginGateError" class="auth-error-alert"></div>
+      <div id="loginGateSuccess" class="auth-success-alert"></div>
+    </div>
+
+    <!-- Screen 2: Authenticated Area -->
+    <div id="authenticatedArea" style="display: none;">
+      <!-- View 1: Polls List -->
+      <div id="listView">
+        <div class="section-title">
+          <div>
+            <span>Minhas Enquetes</span>
+          </div>
+          <div style="display: flex; gap: 0.5rem;">
+            <button class="btn btn-secondary btn-sm" onclick="loadPolls()">↻ Atualizar</button>
+            <button class="btn btn-primary btn-sm" onclick="openNewPollModal()">+ Nova Enquete</button>
+          </div>
+        </div>
+
+        <div id="pollsContainer" class="polls-grid">
+          <!-- Rendered dynamically -->
+        </div>
+      </div>
+
+      <!-- View 2: Single Poll Detail & Question Manager -->
+      <div id="detailView" class="detail-view">
+        <div style="margin-bottom: 1rem;">
+          <button class="btn btn-secondary btn-sm" onclick="showListView()">← Voltar às Enquetes</button>
+        </div>
+
+        <div class="detail-header-card">
+          <div class="detail-top-row">
+            <div class="detail-info">
+              <h1 id="detailTitle">Carregando...</h1>
+              <p id="detailDesc" style="color: var(--text-muted);"></p>
+              <div style="margin-top: 0.5rem; display: flex; gap: 0.5rem; align-items: center;">
+                <span id="detailStatusBadge" class="badge"></span>
+                <span id="detailProfileBadge" class="badge badge-profile" style="display: none;">⚖️ Pesos por Perfil</span>
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
+              <button id="btnStartPoll" class="btn btn-success" onclick="togglePollStatus('active')">▶ Iniciar Apresentação</button>
+              <button id="btnFinishPoll" class="btn btn-secondary" onclick="togglePollStatus('finished')">⏹ Finalizar</button>
+              <a id="btnPresent" target="_blank" class="btn btn-primary">📺 Abrir Apresentação (Slides)</a>
+            </div>
+          </div>
+
+          <div class="detail-share-box">
+            <img id="detailQr" class="qr-img" alt="QR Code" src="" />
+            <div>
+              <div style="font-size: 0.85rem; color: var(--text-muted);">Código de Acesso para Participantes</div>
+              <div id="detailCode" style="font-size: 2rem; font-weight: 800; letter-spacing: 0.15em; color: #818cf8;">------</div>
+              <div style="font-size: 0.85rem; color: #cbd5e1; margin-top: 0.25rem;">
+                Link direto: <code id="detailDirectUrl" style="background: #0f172a; padding: 2px 6px; border-radius: 4px;"></code>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Questions List -->
+        <div class="questions-card">
+          <div class="section-title" style="margin-bottom: 0;">
+            <span>Perguntas da Enquete</span>
+            <button class="btn btn-primary btn-sm" onclick="openAddQuestionModal()">+ Adicionar Pergunta</button>
+          </div>
+
+          <div id="questionsContainer" style="display: flex; flex-direction: column; gap: 1rem;">
+            <!-- Questions rendered here -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Modal: Nova Enquete -->
+  <div id="modalNewPoll" class="modal-backdrop">
+    <div class="modal">
+      <h2>Criar Nova Enquete</h2>
+      <form id="formNewPoll">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label>Título da Enquete *</label>
+          <input type="text" id="newPollTitle" class="form-control" placeholder="Ex: Arquitetura de Software" required />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label>Descrição (Opcional)</label>
+          <textarea id="newPollDesc" class="form-control" rows="2" placeholder="Breve introdução da apresentação"></textarea>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label style="display: flex; align-items: center; gap: 0.5rem; cursor: pointer;">
+            <input type="checkbox" id="newPollHasProfiles" />
+            <span>Ativar perfis com dinâmica de pesos</span>
+          </label>
+          <p style="font-size: 0.8rem; color: var(--text-muted);">
+            Permite cadastrar papéis (ex: Senior peso 2, Junior peso 1) com pesos válidos inteiros consecutivos (1, 2, 3...).
+          </p>
+        </div>
+
+        <!-- Profiles section -->
+        <div id="profilesSection" style="display: none; background: #0f172a; padding: 1rem; border-radius: 0.5rem; border: 1px solid #334155; margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+            <span style="font-size: 0.85rem; font-weight: 700;">Perfis Participantes</span>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addProfileRow()">+ Perfil</button>
+          </div>
+          <div id="profilesContainer">
+            <!-- Dynamic rows -->
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewPoll')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar no Firebase</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Adicionar Pergunta -->
+  <div id="modalQuestion" class="modal-backdrop">
+    <div class="modal">
+      <h2>Adicionar Pergunta</h2>
+      <form id="formQuestion">
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <label>Enunciado da Pergunta *</label>
+          <input type="text" id="qText" class="form-control" placeholder="Ex: Qual tecnologia você prefere?" required />
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
+            <label>Alternativas de Resposta</label>
+            <button type="button" class="btn btn-secondary btn-sm" onclick="addOptionRow()">+ Alternativa</button>
+          </div>
+          <div id="optionsContainer" style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <!-- Options dynamically added -->
+          </div>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
+          <button type="button" class="btn btn-secondary" onclick="closeModal('modalQuestion')">Cancelar</button>
+          <button type="submit" class="btn btn-primary">Salvar Pergunta</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <script type="module">
+    import { 
+      auth, 
+      onPresenterAuth, 
+      signInPresenter, 
+      signInWithEmail,
+      signUpWithEmail,
+      resetPassword,
+      formatAuthError,
+      signOutPresenter, 
+      savePollToFirestore, 
+      getPollsFromFirestore, 
+      getPollFromFirestore, 
+      deletePollFromFirestore,
+      testConnection
+    } from '/firebase-service.js';
+
+    let currentUser = null;
+    let currentPoll = null;
+    let authMode = 'login'; // 'login' or 'register'
+
+    // Test connection to Firestore on boot
+    testConnection();
+
+    // Setup Auth Listener
+    onPresenterAuth((user) => {
+      currentUser = user;
+      updateAuthUI(user);
+      if (user) {
+        loadPolls();
+      }
+    });
+
+    function updateAuthUI(user) {
+      const loginGate = document.getElementById('loginGate');
+      const authenticatedArea = document.getElementById('authenticatedArea');
+      const userHeaderSection = document.getElementById('userHeaderSection');
+      const btnLoginHeader = document.getElementById('btnLoginHeader');
+      const btnNewPollHeader = document.getElementById('btnNewPollHeader');
+
+      if (user) {
+        loginGate.style.display = 'none';
+        authenticatedArea.style.display = 'block';
+        userHeaderSection.style.display = 'flex';
+        btnLoginHeader.style.display = 'none';
+        btnNewPollHeader.style.display = 'inline-flex';
+
+        document.getElementById('userName').textContent = user.displayName || 'Apresentador';
+        document.getElementById('userEmail').textContent = user.email || '';
+        
+        const avatarContainer = document.getElementById('userAvatarContainer');
+        if (user.photoURL) {
+          avatarContainer.innerHTML = `<img src="${user.photoURL}" alt="avatar" style="width:100%;height:100%;border-radius:50%;object-fit:cover;">`;
+        } else {
+          avatarContainer.textContent = (user.displayName || user.email || 'A').charAt(0).toUpperCase();
+        }
+      } else {
+        loginGate.style.display = 'block';
+        authenticatedArea.style.display = 'none';
+        userHeaderSection.style.display = 'none';
+        btnLoginHeader.style.display = 'inline-flex';
+        btnNewPollHeader.style.display = 'none';
+      }
+    }
+
+    function showLoginError(msg) {
+      const errBox = document.getElementById('loginGateError');
+      const succBox = document.getElementById('loginGateSuccess');
+      if (succBox) succBox.style.display = 'none';
+      if (errBox) {
+        errBox.textContent = msg;
+        errBox.style.display = 'block';
+      }
+    }
+
+    function showLoginSuccess(msg) {
+      const errBox = document.getElementById('loginGateError');
+      const succBox = document.getElementById('loginGateSuccess');
+      if (errBox) errBox.style.display = 'none';
+      if (succBox) {
+        succBox.textContent = msg;
+        succBox.style.display = 'block';
+      }
+    }
+
+    function clearAuthFeedback() {
+      const errBox = document.getElementById('loginGateError');
+      const succBox = document.getElementById('loginGateSuccess');
+      if (errBox) {
+        errBox.style.display = 'none';
+        errBox.textContent = '';
+      }
+      if (succBox) {
+        succBox.style.display = 'none';
+        succBox.textContent = '';
+      }
+    }
+
+    // Tabs toggle (Entrar vs Criar Conta)
+    const tabLogin = document.getElementById('tabLogin');
+    const tabRegister = document.getElementById('tabRegister');
+    const authNameGroup = document.getElementById('authNameGroup');
+    const btnSubmitAuthText = document.getElementById('btnSubmitAuthText');
+    const btnForgotPassword = document.getElementById('btnForgotPassword');
+
+    if (tabLogin && tabRegister) {
+      tabLogin.addEventListener('click', () => {
+        authMode = 'login';
+        tabLogin.classList.add('active');
+        tabRegister.classList.remove('active');
+        if (authNameGroup) authNameGroup.style.display = 'none';
+        if (btnSubmitAuthText) btnSubmitAuthText.textContent = 'Entrar no Painel';
+        if (btnForgotPassword) btnForgotPassword.style.display = 'inline-block';
+        clearAuthFeedback();
+      });
+
+      tabRegister.addEventListener('click', () => {
+        authMode = 'register';
+        tabRegister.classList.add('active');
+        tabLogin.classList.remove('active');
+        if (authNameGroup) authNameGroup.style.display = 'block';
+        if (btnSubmitAuthText) btnSubmitAuthText.textContent = 'Criar Conta e Entrar';
+        if (btnForgotPassword) btnForgotPassword.style.display = 'none';
+        clearAuthFeedback();
+      });
+    }
+
+    // Email & Password Form Submission
+    const authEmailForm = document.getElementById('authEmailForm');
+    const btnSubmitEmailAuth = document.getElementById('btnSubmitEmailAuth');
+    const authEmailInput = document.getElementById('authEmailInput');
+    const authPasswordInput = document.getElementById('authPasswordInput');
+    const authNameInput = document.getElementById('authNameInput');
+
+    if (authEmailForm) {
+      authEmailForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearAuthFeedback();
+
+        const email = authEmailInput ? authEmailInput.value.trim() : '';
+        const password = authPasswordInput ? authPasswordInput.value : '';
+        const name = authNameInput ? authNameInput.value.trim() : '';
+
+        if (!email) {
+          showLoginError('Por favor, informe seu endereço de e-mail.');
+          if (authEmailInput) authEmailInput.focus();
+          return;
+        }
+        if (!password) {
+          showLoginError('Por favor, digite sua senha.');
+          if (authPasswordInput) authPasswordInput.focus();
+          return;
+        }
+        if (password.length < 6) {
+          showLoginError('A senha precisa ter pelo menos 6 caracteres.');
+          if (authPasswordInput) authPasswordInput.focus();
+          return;
+        }
+
+        try {
+          if (btnSubmitEmailAuth) btnSubmitEmailAuth.disabled = true;
+          if (btnSubmitAuthText) {
+            btnSubmitAuthText.textContent = authMode === 'login' ? 'Entrando...' : 'Criando conta...';
+          }
+
+          if (authMode === 'login') {
+            await signInWithEmail(email, password);
+          } else {
+            await signUpWithEmail(email, password, name);
+          }
+        } catch (err) {
+          showLoginError(formatAuthError(err));
+        } finally {
+          if (btnSubmitEmailAuth) btnSubmitEmailAuth.disabled = false;
+          if (btnSubmitAuthText) {
+            btnSubmitAuthText.textContent = authMode === 'login' ? 'Entrar no Painel' : 'Criar Conta e Entrar';
+          }
+        }
+      });
+    }
+
+    // Password reset
+    if (btnForgotPassword) {
+      btnForgotPassword.addEventListener('click', async () => {
+        clearAuthFeedback();
+        const email = authEmailInput ? authEmailInput.value.trim() : '';
+        if (!email) {
+          showLoginError('Digite seu e-mail no campo acima e clique em "Esqueceu a senha?" para receber as instruções.');
+          if (authEmailInput) authEmailInput.focus();
+          return;
+        }
+        try {
+          await resetPassword(email);
+          showLoginSuccess(`Enviamos um link de redefinição para ${email}. Verifique seu e-mail.`);
+        } catch (err) {
+          showLoginError(formatAuthError(err));
+        }
+      });
+    }
+
+    // Google Sign-In handlers
+    document.getElementById('btnLoginGate').addEventListener('click', async () => {
+      clearAuthFeedback();
+      const btn = document.getElementById('btnLoginGate');
+      try {
+        btn.style.opacity = '0.75';
+        btn.style.pointerEvents = 'none';
+        await signInPresenter();
+      } catch (err) {
+        console.error('Login error:', err);
+        showLoginError('Não foi possível entrar com o Google: ' + formatAuthError(err));
+      } finally {
+        btn.style.opacity = '1';
+        btn.style.pointerEvents = 'auto';
+      }
+    });
+
+    document.getElementById('btnLoginHeader').addEventListener('click', async () => {
+      clearAuthFeedback();
+      // Scroll to login card if visible, or trigger sign in
+      const loginGate = document.getElementById('loginGate');
+      if (loginGate && loginGate.style.display !== 'none') {
+        loginGate.scrollIntoView({ behavior: 'smooth' });
+        if (authEmailInput) authEmailInput.focus();
+      } else {
+        try {
+          await signInPresenter();
+        } catch (err) {
+          console.error('Login error:', err);
+          showLoginError(formatAuthError(err));
+        }
+      }
+    });
+
+    document.getElementById('btnLogout').addEventListener('click', async () => {
+      try {
+        await signOutPresenter();
+      } catch (err) {
+        console.error('Logout error:', err);
+      }
+    });
+
+    document.getElementById('newPollHasProfiles').addEventListener('change', (e) => {
+      toggleProfilesSection(e.target.checked);
+    });
+
+    window.loadPolls = async function() {
+      if (!currentUser) return;
+      const container = document.getElementById('pollsContainer');
+      container.innerHTML = '<div class="empty-state">Carregando suas enquetes...</div>';
+
+      try {
+        // Fetch from Firestore
+        let list = await getPollsFromFirestore(currentUser.uid);
+
+        // Fallback or sync check
+        if (!list || list.length === 0) {
+          const res = await fetch('/api/polls');
+          const serverList = await res.json();
+          // Filter server polls matching current user if any
+          const userServerPolls = (serverList || []).filter(p => !p.creatorId || p.creatorId === currentUser.uid);
+          if (userServerPolls.length > 0) {
+            // Save them to Firestore for persistent migration
+            for (const sp of userServerPolls) {
+              const fullRes = await fetch(`/api/polls/${sp.id}`);
+              if (fullRes.ok) {
+                const fullPoll = await fullRes.json();
+                fullPoll.creatorId = currentUser.uid;
+                fullPoll.creatorEmail = currentUser.email;
+                await savePollToFirestore(fullPoll);
+              }
+            }
+            list = await getPollsFromFirestore(currentUser.uid);
+          }
+        }
+
+        if (!list || list.length === 0) {
+          container.innerHTML = `
+            <div class="empty-state" style="grid-column: 1 / -1;">
+              <p>Você ainda não possui enquetes cadastradas.</p>
+              <button class="btn btn-primary" style="margin-top: 1rem;" onclick="openNewPollModal()">+ Criar Primeira Enquete</button>
+            </div>
+          `;
+          return;
+        }
+
+        // Prime the server memory for each saved poll
+        for (const p of list) {
+          fetch('/api/polls/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(p)
+          }).catch(() => {});
+        }
+
+        container.innerHTML = list.map(poll => `
+          <div class="poll-card">
+            <div class="poll-header">
+              <div class="poll-title">${escapeHtml(poll.title)}</div>
+              <span class="badge badge-${poll.status || 'draft'}">${poll.status || 'draft'}</span>
+            </div>
+            <div class="poll-meta">
+              <div>Código de Acesso: <span class="poll-code-tag">${poll.code}</span></div>
+              <div>Perguntas: <strong>${Array.isArray(poll.questions) ? poll.questions.length : 0}</strong></div>
+              <div>Perfis com pesos: <strong>${poll.hasProfiles ? 'Sim' : 'Não'}</strong></div>
+              <div style="font-size: 0.75rem; color: #64748b; margin-top: 2px;">☁️ Salvo no Firestore</div>
+            </div>
+            <div class="poll-actions">
+              <button class="btn btn-secondary btn-sm" onclick="openPollDetail('${poll.id}')">Gerenciar</button>
+              <a href="/present.html#${poll.id}" target="_blank" class="btn btn-primary btn-sm">Apresentar 📺</a>
+              <button class="btn btn-danger btn-sm" onclick="deletePoll('${poll.id}')">Excluir</button>
+            </div>
+          </div>
+        `).join('');
+      } catch (err) {
+        container.innerHTML = `<div class="empty-state" style="color: #f87171;">Erro ao carregar enquetes: ${err.message}</div>`;
+      }
+    };
+
+    window.openPollDetail = async function(id) {
+      try {
+        // Load from Firestore first for true persistence
+        let pollData = await getPollFromFirestore(id);
+        if (!pollData) {
+          const res = await fetch(`/api/polls/${id}`);
+          if (!res.ok) throw new Error('Enquete não encontrada');
+          pollData = await res.json();
+        }
+
+        currentPoll = pollData;
+
+        // Ensure server has it synced
+        await fetch('/api/polls/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentPoll)
+        });
+
+        document.getElementById('listView').style.display = 'none';
+        document.getElementById('detailView').classList.add('active');
+
+        document.getElementById('detailTitle').textContent = currentPoll.title;
+        document.getElementById('detailDesc').textContent = currentPoll.description || 'Sem descrição';
+        document.getElementById('detailCode').textContent = currentPoll.code;
+        document.getElementById('btnPresent').href = `/present.html#${currentPoll.id}`;
+
+        const origin = window.location.origin;
+        const directUrl = `${origin}/vote.html#${currentPoll.code}`;
+        document.getElementById('detailDirectUrl').textContent = directUrl;
+
+        updateDetailStatusUI(currentPoll.status);
+
+        const profileBadge = document.getElementById('detailProfileBadge');
+        if (currentPoll.hasProfiles) {
+          profileBadge.style.display = 'inline-block';
+        } else {
+          profileBadge.style.display = 'none';
+        }
+
+        // Load QR Code from server
+        try {
+          const qrRes = await fetch(`/api/polls/${currentPoll.id}/qrcode`);
+          const qrData = await qrRes.json();
+          document.getElementById('detailQr').src = qrData.dataUrl;
+        } catch (e) {
+          console.error('QR code fetch error', e);
+        }
+
+        renderQuestionsList();
+      } catch (err) {
+        alert('Erro ao abrir detalhes: ' + err.message);
+      }
+    };
+
+    window.showListView = function() {
+      document.getElementById('detailView').classList.remove('active');
+      document.getElementById('listView').style.display = 'block';
+      loadPolls();
+    };
+
+    window.deletePoll = async function(id) {
+      if (!confirm('Deseja realmente excluir esta enquete permanentemente?')) return;
+      try {
+        await deletePollFromFirestore(id);
+        await fetch(`/api/polls/${id}`, { method: 'DELETE' });
+        loadPolls();
+      } catch (err) {
+        alert('Erro ao excluir enquete: ' + err.message);
+      }
+    };
+
+    window.togglePollStatus = async function(newStatus) {
+      if (!currentPoll) return;
+      try {
+        currentPoll.status = newStatus;
+        if (newStatus === 'active' && (!currentPoll.currentQuestionId) && currentPoll.questions && currentPoll.questions.length > 0) {
+          currentPoll.currentQuestionId = currentPoll.questions[0].id;
+        }
+
+        // Save in Firestore
+        await savePollToFirestore(currentPoll);
+
+        // Update server
+        await fetch(`/api/polls/${currentPoll.id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: newStatus })
+        });
+
+        updateDetailStatusUI(newStatus);
+      } catch (err) {
+        alert('Erro ao atualizar status: ' + err.message);
+      }
+    };
+
+    function updateDetailStatusUI(status) {
+      const badge = document.getElementById('detailStatusBadge');
+      badge.className = `badge badge-${status || 'draft'}`;
+      badge.textContent = status || 'draft';
+
+      const btnStart = document.getElementById('btnStartPoll');
+      const btnFinish = document.getElementById('btnFinishPoll');
+
+      if (status === 'active') {
+        btnStart.textContent = '● Apresentação em Andamento';
+        btnStart.disabled = true;
+        btnStart.className = 'btn btn-secondary';
+        btnFinish.style.display = 'inline-flex';
+      } else if (status === 'finished') {
+        btnStart.textContent = '▶ Reiniciar Apresentação';
+        btnStart.disabled = false;
+        btnStart.className = 'btn btn-success';
+        btnFinish.style.display = 'none';
+      } else {
+        btnStart.textContent = '▶ Iniciar Apresentação';
+        btnStart.disabled = false;
+        btnStart.className = 'btn btn-success';
+        btnFinish.style.display = 'none';
+      }
+    }
+
+    function renderQuestionsList() {
+      const container = document.getElementById('questionsContainer');
+      const questions = currentPoll.questions || [];
+
+      if (questions.length === 0) {
+        container.innerHTML = `
+          <div class="empty-state">
+            <p>Nenhuma pergunta cadastrada nesta enquete.</p>
+            <button class="btn btn-primary btn-sm" style="margin-top: 0.5rem;" onclick="openAddQuestionModal()">+ Adicionar Primeira Pergunta</button>
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = questions.map((q, index) => `
+        <div class="question-item">
+          <div class="question-header">
+            <div>
+              <strong style="color: #818cf8; font-size: 0.85rem;">Pergunta #${index + 1}</strong>
+              <div style="font-size: 1.1rem; font-weight: 600; margin-top: 0.2rem;">${escapeHtml(q.text)}</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem;">
+              <button class="btn btn-danger btn-sm" onclick="deleteQuestion('${q.id}')">Excluir</button>
+            </div>
+          </div>
+          <div>
+            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Alternativas:</div>
+            ${(q.options || []).map(opt => `
+              <div class="option-pill">
+                <span>${escapeHtml(opt.text)}</span>
+                ${currentPoll.hasProfiles && opt.weights ? `
+                  <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                    ${Object.entries(opt.weights).map(([profId, w]) => {
+                      const prof = (currentPoll.profiles || []).find(p => p.id === profId);
+                      const name = prof ? prof.name : profId;
+                      return `<span class="weight-chip">${escapeHtml(name)}: ${w}</span>`;
+                    }).join('')}
+                  </div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+    }
+
+    window.deleteQuestion = async function(questionId) {
+      if (!confirm('Deseja excluir esta pergunta?')) return;
+      try {
+        currentPoll.questions = (currentPoll.questions || []).filter(q => q.id !== questionId);
+        await savePollToFirestore(currentPoll);
+        await fetch(`/api/questions/${questionId}`, { method: 'DELETE' });
+        renderQuestionsList();
+      } catch (err) {
+        alert('Erro ao excluir pergunta: ' + err.message);
+      }
+    };
+
+    // Modal helpers
+    window.openNewPollModal = function() {
+      document.getElementById('formNewPoll').reset();
+      document.getElementById('profilesContainer').innerHTML = '';
+      toggleProfilesSection(false);
+      document.getElementById('modalNewPoll').classList.add('open');
+    };
+
+    window.openAddQuestionModal = function() {
+      document.getElementById('formQuestion').reset();
+      const container = document.getElementById('optionsContainer');
+      container.innerHTML = '';
+      addOptionRow();
+      addOptionRow();
+      document.getElementById('modalQuestion').classList.add('open');
+    };
+
+    window.closeModal = function(modalId) {
+      document.getElementById(modalId).classList.remove('open');
+    };
+
+    window.toggleProfilesSection = function(checked) {
+      const section = document.getElementById('profilesSection');
+      section.style.display = checked ? 'block' : 'none';
+      if (checked && document.getElementById('profilesContainer').children.length === 0) {
+        addProfileRow('Senior', 2);
+        addProfileRow('Junior', 1);
+      }
+    };
+
+    window.addProfileRow = function(defaultName = '', defaultWeight = 1) {
+      const container = document.getElementById('profilesContainer');
+      const rowId = 'prof_' + Math.random().toString(36).substring(2, 9);
+      const div = document.createElement('div');
+      div.id = rowId;
+      div.style.cssText = 'display: flex; gap: 0.5rem; margin-bottom: 0.5rem; align-items: center;';
+      div.innerHTML = `
+        <input type="text" class="form-control form-control-sm prof-name" placeholder="Nome do Perfil" value="${escapeHtml(defaultName)}" style="flex: 2;" required />
+        <input type="number" class="form-control form-control-sm prof-weight" placeholder="Peso" value="${defaultWeight}" min="1" step="1" style="flex: 1;" required />
+        <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('${rowId}').remove()">✕</button>
+      `;
+      container.appendChild(div);
+    };
+
+    window.addOptionRow = function() {
+      const container = document.getElementById('optionsContainer');
+      const optId = 'opt_' + Math.random().toString(36).substring(2, 9);
+      const div = document.createElement('div');
+      div.id = optId;
+      div.style.cssText = 'background: #0f172a; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #334155;';
+
+      let weightsInputsHtml = '';
+      if (currentPoll && currentPoll.hasProfiles && Array.isArray(currentPoll.profiles) && currentPoll.profiles.length > 0) {
+        weightsInputsHtml = `
+          <div style="margin-top: 0.5rem; font-size: 0.8rem; color: #fb923c;">Pesos válidos por perfil (1, 2, 3...):</div>
+          <div style="display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.25rem;">
+            ${currentPoll.profiles.map(p => `
+              <div style="display: flex; align-items: center; gap: 0.25rem; font-size: 0.8rem;">
+                <label style="color: #cbd5e1;">${escapeHtml(p.name)}:</label>
+                <input type="number" min="1" step="1" class="form-control form-control-sm opt-weight-input" data-prof-id="${p.id}" value="${p.weight || 1}" style="width: 60px; padding: 0.25rem;" />
+              </div>
+            `).join('')}
+          </div>
+        `;
+      }
+
+      div.innerHTML = `
+        <div style="display: flex; gap: 0.5rem; align-items: center;">
+          <input type="text" class="form-control opt-text" placeholder="Texto da alternativa" style="flex: 1;" required />
+          <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('${optId}').remove()">✕</button>
+        </div>
+        ${weightsInputsHtml}
+      `;
+      container.appendChild(div);
+    };
+
+    // Form: Create Poll
+    document.getElementById('formNewPoll').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentUser) return;
+
+      const title = document.getElementById('newPollTitle').value.trim();
+      const description = document.getElementById('newPollDesc').value.trim();
+      const hasProfiles = document.getElementById('newPollHasProfiles').checked;
+
+      const profiles = [];
+      if (hasProfiles) {
+        const rows = document.querySelectorAll('#profilesContainer > div');
+        rows.forEach(r => {
+          const name = r.querySelector('.prof-name').value.trim();
+          const weight = Math.max(1, Math.round(Number(r.querySelector('.prof-weight').value || 1)));
+          if (name) {
+            profiles.push({
+              id: 'prof_' + Math.random().toString(36).substring(2, 9),
+              name,
+              weight
+            });
+          }
+        });
+      }
+
+      try {
+        // Create on server to generate safe 6-char code
+        const res = await fetch('/api/polls', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            title,
+            description,
+            hasProfiles,
+            profiles,
+            creatorId: currentUser.uid,
+            creatorEmail: currentUser.email
+          })
+        });
+
+        if (!res.ok) throw new Error('Falha ao registrar enquete');
+        const poll = await res.json();
+        poll.creatorId = currentUser.uid;
+        poll.creatorEmail = currentUser.email;
+
+        // Persist to Firestore
+        await savePollToFirestore(poll);
+
+        closeModal('modalNewPoll');
+        openPollDetail(poll.id);
+      } catch (err) {
+        alert('Erro ao criar enquete: ' + err.message);
+      }
+    });
+
+    // Form: Add Question
+    document.getElementById('formQuestion').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentPoll) return;
+
+      const text = document.getElementById('qText').value.trim();
+      const optionRows = document.querySelectorAll('#optionsContainer > div');
+      const options = [];
+
+      optionRows.forEach((r, idx) => {
+        const optText = r.querySelector('.opt-text').value.trim();
+        if (optText) {
+          const weights = {};
+          if (currentPoll.hasProfiles) {
+            r.querySelectorAll('.opt-weight-input').forEach(wInput => {
+              const profId = wInput.dataset.profId;
+              const val = Math.max(1, Math.round(Number(wInput.value || 1)));
+              weights[profId] = val;
+            });
+          }
+
+          options.push({
+            id: 'opt_' + Math.random().toString(36).substring(2, 9),
+            text: optText,
+            orderNum: idx + 1,
+            weights
+          });
+        }
+      });
+
+      if (options.length < 2) {
+        alert('A pergunta deve ter pelo menos 2 alternativas!');
+        return;
+      }
+
+      try {
+        const newQuestion = {
+          id: 'q_' + Math.random().toString(36).substring(2, 9),
+          text,
+          orderNum: (currentPoll.questions || []).length + 1,
+          votingOpen: false,
+          options
+        };
+
+        if (!Array.isArray(currentPoll.questions)) {
+          currentPoll.questions = [];
+        }
+        currentPoll.questions.push(newQuestion);
+
+        // Save to Firestore
+        await savePollToFirestore(currentPoll);
+
+        // Sync with server
+        await fetch('/api/polls/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentPoll)
+        });
+
+        closeModal('modalQuestion');
+        renderQuestionsList();
+      } catch (err) {
+        alert('Erro ao salvar pergunta: ' + err.message);
+      }
+    });
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+  </script>
+</body>
+</html>
