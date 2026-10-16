@@ -635,16 +635,36 @@
 
     <!-- Screen 2: Active Question -->
     <div id="screenQuestion">
-      <div class="question-header">
-        <div class="question-meta">
-          <span class="question-counter" id="qCounter">Pergunta 1 de 1</span>
-          <span id="votingStatusPill" class="voting-status-pill status-closed">⚪ Votação Fechada</span>
-        </div>
-        <h1 class="question-text" id="currentQuestionText">Enunciado da pergunta</h1>
-      </div>
+      <div style="display: grid; grid-template-columns: 1fr 380px; gap: 2.5rem; align-items: stretch; flex: 1; width: 100%;">
+        <!-- Left: Question Header & Bars -->
+        <div style="display: flex; flex-direction: column; gap: 2rem; justify-content: center;">
+          <div class="question-header">
+            <div class="question-meta">
+              <span class="question-counter" id="qCounter">Pergunta 1 de 1</span>
+              <span id="votingStatusPill" class="voting-status-pill status-open">🟢 Votação Aberta</span>
+            </div>
+            <h1 class="question-text" id="currentQuestionText">Enunciado da pergunta</h1>
+          </div>
 
-      <div class="bars-container" id="barsContainer">
-        <!-- Animated bars rendered here -->
+          <div class="bars-container" id="barsContainer">
+            <!-- Animated bars rendered here -->
+          </div>
+        </div>
+
+        <!-- Right Sidebar: QR Code & Poll ID (Always visible) -->
+        <div style="background: var(--card-bg); border: 1px solid var(--card-border); border-radius: 1.5rem; padding: 2rem 1.5rem; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center; gap: 1.5rem; box-shadow: 0 20px 40px rgba(0,0,0,0.5);">
+          <div style="font-size: 1.15rem; font-weight: 800; color: #818cf8; text-transform: uppercase; letter-spacing: 0.08em;">Vote ao Vivo</div>
+          <div style="background: white; padding: 1.25rem; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0,0,0,0.3);">
+            <img id="qrImgSide" class="big-qr-img" style="width: 210px; height: 210px; display: block;" alt="QR Code" src="" />
+          </div>
+          <div style="display: flex; flex-direction: column; align-items: center; gap: 0.35rem;">
+            <span style="font-size: 0.85rem; text-transform: uppercase; letter-spacing: 0.1em; color: var(--text-muted);">Código de Acesso</span>
+            <div class="code-highlight" id="sideCode" style="font-size: 2.75rem; padding: 0.35rem 1.25rem;">------</div>
+          </div>
+          <div style="font-size: 0.85rem; color: var(--text-muted); line-height: 1.4; max-width: 280px;">
+            Aponte a câmera do celular para o QR Code para acessar e votar
+          </div>
+        </div>
       </div>
     </div>
 
@@ -688,10 +708,7 @@
     </div>
 
     <div class="controls-group">
-      <button class="control-btn btn-primary" id="btnToggleVoting" onclick="toggleVoting()">
-        Abrir Votação (Espaço)
-      </button>
-      <span style="font-size: 0.9rem; color: var(--text-muted); margin-left: 0.5rem;" id="totalVotesDisplay">0 votos</span>
+      <span style="font-size: 0.95rem; color: var(--text-muted); font-weight: 600;" id="totalVotesDisplay">0 votos</span>
     </div>
 
     <div>
@@ -874,12 +891,16 @@
       document.getElementById('pollDesc').textContent = poll.description || '';
       document.getElementById('topCode').textContent = poll.code;
       document.getElementById('bigCode').textContent = poll.code;
+      const sideC = document.getElementById('sideCode');
+      if (sideC) sideC.textContent = poll.code;
 
       // Fetch QR Code
       try {
         const qrRes = await fetch(`/api/polls/${poll.id}/qrcode`);
         const qrData = await qrRes.json();
         document.getElementById('qrImg').src = qrData.dataUrl;
+        const qrSide = document.getElementById('qrImgSide');
+        if (qrSide) qrSide.src = qrData.dataUrl;
       } catch (e) {
         console.error('Error fetching QR code:', e);
       }
@@ -1025,7 +1046,8 @@
         btnFinishLast.style.display = 'none';
       }
 
-      updateVotingStatusUI(q.votingOpen);
+      q.votingOpen = true;
+      updateVotingStatusUI(true);
       await loadQuestionResults(q.id);
     }
 
@@ -1073,37 +1095,23 @@
 
     function updateVotingStatusUI(isOpen) {
       const pill = document.getElementById('votingStatusPill');
-      const btn = document.getElementById('btnToggleVoting');
-
-      if (isOpen) {
+      if (pill) {
         pill.className = 'voting-status-pill status-open';
-        pill.innerHTML = '🔴 Votação Aberta';
-        btn.textContent = 'Fechar Votação (Espaço)';
-        btn.classList.add('btn-danger');
-      } else {
-        pill.className = 'voting-status-pill status-closed';
-        pill.innerHTML = '⚪ Votação Fechada';
-        btn.textContent = 'Abrir Votação (Espaço)';
-        btn.classList.remove('btn-danger');
+        pill.innerHTML = '🟢 Votação Aberta';
       }
     }
-
-    window.toggleVoting = function() {
-      const q = poll.questions[currentQuestionIndex];
-      if (!q) return;
-
-      if (q.votingOpen) {
-        socket.emit('close-voting', { pollId, questionId: q.id });
-      } else {
-        socket.emit('open-voting', { pollId, questionId: q.id });
-      }
-    };
 
     window.prevQuestion = function() {
       if (currentQuestionIndex > 0) {
         currentQuestionIndex--;
         const q = poll.questions[currentQuestionIndex];
-        socket.emit('change-question', { pollId, questionId: q.id });
+        poll.questions.forEach((item, idx) => {
+          item.votingOpen = (idx === currentQuestionIndex);
+        });
+        poll.currentQuestionId = q.id;
+        if (socket) {
+          socket.emit('change-question', { pollId, questionId: q.id });
+        }
         displayCurrentQuestion();
       }
     };
@@ -1112,7 +1120,13 @@
       if (currentQuestionIndex < poll.questions.length - 1) {
         currentQuestionIndex++;
         const q = poll.questions[currentQuestionIndex];
-        socket.emit('change-question', { pollId, questionId: q.id });
+        poll.questions.forEach((item, idx) => {
+          item.votingOpen = (idx === currentQuestionIndex);
+        });
+        poll.currentQuestionId = q.id;
+        if (socket) {
+          socket.emit('change-question', { pollId, questionId: q.id });
+        }
         displayCurrentQuestion();
       }
     };
@@ -1124,6 +1138,12 @@
       }
       try {
         poll.status = 'active';
+        currentQuestionIndex = 0;
+        poll.currentQuestionId = poll.questions[0].id;
+        poll.questions.forEach((q, idx) => {
+          q.votingOpen = (idx === 0);
+        });
+
         await fetch(`/api/polls/${pollId}/status`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
@@ -1135,7 +1155,9 @@
       } catch (err) {
         console.error('Error starting poll via HTTP:', err);
       }
-      socket.emit('start-poll', { pollId });
+      if (socket) {
+        socket.emit('start-poll', { pollId });
+      }
       showQuestionScreen();
     };
 
@@ -1171,10 +1193,7 @@
     window.addEventListener('keydown', (e) => {
       if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
 
-      if (e.code === 'Space') {
-        e.preventDefault();
-        toggleVoting();
-      } else if (e.key === 'ArrowRight') {
+      if (e.key === 'ArrowRight') {
         if (currentQuestionIndex < poll.questions.length - 1) {
           nextQuestion();
         }

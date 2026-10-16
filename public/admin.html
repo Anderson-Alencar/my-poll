@@ -872,9 +872,8 @@
               </div>
             </div>
             <div style="display: flex; gap: 0.5rem; flex-wrap: wrap;">
-              <button id="btnStartPoll" class="btn btn-success" onclick="togglePollStatus('active')">▶ Iniciar Apresentação</button>
-              <button id="btnFinishPoll" class="btn btn-secondary" onclick="togglePollStatus('finished')">⏹ Finalizar</button>
-              <a id="btnPresent" target="_blank" class="btn btn-primary">📺 Abrir Apresentação (Slides)</a>
+              <button id="btnStartPoll" class="btn btn-success" onclick="startPresentationFromAdmin()">▶ Iniciar Apresentação</button>
+              <button id="btnFinishPoll" class="btn btn-secondary" onclick="togglePollStatus('finished')" style="display: none;">⏹ Finalizar</button>
             </div>
           </div>
 
@@ -943,7 +942,7 @@
 
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1rem;">
           <button type="button" class="btn btn-secondary" onclick="closeModal('modalNewPoll')">Cancelar</button>
-          <button type="submit" class="btn btn-primary">Salvar no Firebase</button>
+          <button type="submit" class="btn btn-primary">Salvar</button>
         </div>
       </form>
     </div>
@@ -1286,7 +1285,7 @@
             </div>
             <div class="poll-actions">
               <button class="btn btn-secondary btn-sm" onclick="openPollDetail('${poll.id}')">Gerenciar</button>
-              <a href="/present.html#${poll.id}" target="_blank" class="btn btn-primary btn-sm">Apresentar 📺</a>
+              <button class="btn btn-success btn-sm" onclick="startPresentationById('${poll.id}')">▶ Iniciar Apresentação</button>
               <button class="btn btn-danger btn-sm" onclick="deletePoll('${poll.id}')">Excluir</button>
             </div>
           </div>
@@ -1321,7 +1320,6 @@
         document.getElementById('detailTitle').textContent = currentPoll.title;
         document.getElementById('detailDesc').textContent = currentPoll.description || 'Sem descrição';
         document.getElementById('detailCode').textContent = currentPoll.code;
-        document.getElementById('btnPresent').href = `/present.html#${currentPoll.id}`;
 
         const origin = window.location.origin;
         const directUrl = `${origin}/vote.html#${currentPoll.code}`;
@@ -1368,12 +1366,81 @@
       }
     };
 
+    window.startPresentationFromAdmin = async function() {
+      if (!currentPoll) return;
+      if (!currentPoll.questions || currentPoll.questions.length === 0) {
+        alert('Esta enquete ainda não possui perguntas! Adicione perguntas antes de iniciar a apresentação.');
+        return;
+      }
+      try {
+        currentPoll.status = 'active';
+        currentPoll.currentQuestionId = currentPoll.questions[0].id;
+        currentPoll.questions.forEach((q, idx) => {
+          q.votingOpen = (idx === 0);
+        });
+
+        // Save in Firestore
+        await savePollToFirestore(currentPoll);
+
+        // Update server
+        await fetch(`/api/polls/${currentPoll.id}/status`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: 'active' })
+        });
+
+        updateDetailStatusUI('active');
+      } catch (err) {
+        console.error('Error starting presentation:', err);
+      }
+      window.open(`/present.html#${currentPoll.id}`, '_blank');
+    };
+
+    window.startPresentationById = async function(id) {
+      try {
+        let pollData = await getPollFromFirestore(id);
+        if (!pollData) {
+          const res = await fetch(`/api/polls/${id}`);
+          if (res.ok) pollData = await res.json();
+        }
+        if (pollData) {
+          if (!pollData.questions || pollData.questions.length === 0) {
+            alert('Esta enquete ainda não possui perguntas! Adicione perguntas no botão "Gerenciar" antes de iniciar a apresentação.');
+            return;
+          }
+          pollData.status = 'active';
+          pollData.currentQuestionId = pollData.questions[0].id;
+          pollData.questions.forEach((q, idx) => {
+            q.votingOpen = (idx === 0);
+          });
+          await savePollToFirestore(pollData);
+          await fetch(`/api/polls/${id}/status`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: 'active' })
+          });
+        }
+      } catch (err) {
+        console.error('Error starting presentation from list:', err);
+      }
+      window.open(`/present.html#${id}`, '_blank');
+    };
+
     window.togglePollStatus = async function(newStatus) {
       if (!currentPoll) return;
       try {
         currentPoll.status = newStatus;
-        if (newStatus === 'active' && (!currentPoll.currentQuestionId) && currentPoll.questions && currentPoll.questions.length > 0) {
-          currentPoll.currentQuestionId = currentPoll.questions[0].id;
+        if (newStatus === 'active') {
+          if (!currentPoll.currentQuestionId && currentPoll.questions && currentPoll.questions.length > 0) {
+            currentPoll.currentQuestionId = currentPoll.questions[0].id;
+          }
+          currentPoll.questions.forEach((q, idx) => {
+            q.votingOpen = (idx === 0);
+          });
+        } else if (newStatus === 'finished') {
+          currentPoll.questions.forEach(q => {
+            q.votingOpen = false;
+          });
         }
 
         // Save in Firestore
@@ -1400,20 +1467,13 @@
       const btnStart = document.getElementById('btnStartPoll');
       const btnFinish = document.getElementById('btnFinishPoll');
 
+      btnStart.textContent = '▶ Iniciar Apresentação';
+      btnStart.disabled = false;
+      btnStart.className = 'btn btn-success';
+
       if (status === 'active') {
-        btnStart.textContent = '● Apresentação em Andamento';
-        btnStart.disabled = true;
-        btnStart.className = 'btn btn-secondary';
         btnFinish.style.display = 'inline-flex';
-      } else if (status === 'finished') {
-        btnStart.textContent = '▶ Reiniciar Apresentação';
-        btnStart.disabled = false;
-        btnStart.className = 'btn btn-success';
-        btnFinish.style.display = 'none';
       } else {
-        btnStart.textContent = '▶ Iniciar Apresentação';
-        btnStart.disabled = false;
-        btnStart.className = 'btn btn-success';
         btnFinish.style.display = 'none';
       }
     }

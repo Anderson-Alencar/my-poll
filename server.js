@@ -412,11 +412,18 @@ app.put('/api/polls/:id', (req, res) => {
         if (!poll.currentQuestionId && poll.questions && poll.questions.length > 0) {
           poll.currentQuestionId = poll.questions[0].id;
         }
+        poll.questions.forEach(q => { q.votingOpen = false; });
         const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId) || (poll.questions.length > 0 ? poll.questions[0] : null);
+        if (activeQ) {
+          activeQ.votingOpen = true;
+        }
         io.to(`poll:${poll.id}`).emit('poll-started', {
           pollId: poll.id,
           question: activeQ ? serializeQuestion(activeQ) : null
         });
+        if (activeQ) {
+          io.to(`poll:${poll.id}`).emit('voting-opened', { questionId: activeQ.id });
+        }
       } else if (status === 'finished') {
         poll.questions.forEach(q => { q.votingOpen = false; });
         io.to(`poll:${poll.id}`).emit('poll-finished', { pollId: poll.id });
@@ -698,10 +705,11 @@ app.get('/api/polls/join/:code', (req, res) => {
       if (poll.currentQuestionId) {
         const q = poll.questions.find(item => item.id === poll.currentQuestionId);
         if (q) {
+          q.votingOpen = true;
           currentQuestion = {
             id: q.id,
             text: q.text,
-            votingOpen: q.votingOpen,
+            votingOpen: true,
             options: q.options.map(opt => ({
               id: opt.id,
               text: opt.text
@@ -849,11 +857,18 @@ app.put('/api/polls/:id/status', (req, res) => {
       if (!poll.currentQuestionId && poll.questions.length > 0) {
         poll.currentQuestionId = poll.questions[0].id;
       }
+      poll.questions.forEach(q => { q.votingOpen = false; });
       const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId);
+      if (activeQ) {
+        activeQ.votingOpen = true;
+      }
       io.to(`poll:${poll.id}`).emit('poll-started', {
         pollId: poll.id,
         question: activeQ ? serializeQuestion(activeQ) : null
       });
+      if (activeQ) {
+        io.to(`poll:${poll.id}`).emit('voting-opened', { questionId: activeQ.id });
+      }
     } else if (status === 'finished') {
       poll.questions.forEach(q => { q.votingOpen = false; });
       io.to(`poll:${poll.id}`).emit('poll-finished', { pollId: poll.id });
@@ -957,11 +972,14 @@ io.on('connection', socket => {
         return socket.emit('error', { message: 'Pergunta não encontrada' });
       }
 
+      poll.questions.forEach(q => { q.votingOpen = false; });
       poll.currentQuestionId = questionId;
+      question.votingOpen = true;
 
       io.to(`poll:${pollId}`).emit('question-changed', {
         question: serializeQuestion(question)
       });
+      io.to(`poll:${pollId}`).emit('voting-opened', { questionId });
     } catch (err) {
       console.error('Error in change-question:', err);
       socket.emit('error', { message: 'Erro ao alterar pergunta ativa' });
@@ -1039,14 +1057,19 @@ io.on('connection', socket => {
         if (!poll.currentQuestionId) {
           poll.currentQuestionId = poll.questions[0].id;
         }
+        poll.questions.forEach(q => { q.votingOpen = false; });
         const activeQ = poll.questions.find(q => q.id === poll.currentQuestionId) || poll.questions[0];
         poll.currentQuestionId = activeQ.id;
+        activeQ.votingOpen = true;
         question = serializeQuestion(activeQ);
       } else {
         poll.currentQuestionId = null;
       }
 
       io.to(`poll:${pollId}`).emit('poll-started', { pollId, question });
+      if (poll.currentQuestionId) {
+        io.to(`poll:${pollId}`).emit('voting-opened', { questionId: poll.currentQuestionId });
+      }
     } catch (err) {
       console.error('Error in start-poll:', err);
       socket.emit('error', { message: 'Erro ao iniciar enquete' });
