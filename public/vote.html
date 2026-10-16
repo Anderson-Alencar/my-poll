@@ -829,11 +829,11 @@
 
         socket.on('connect', () => {
           socket.emit('join-poll', { pollId: poll.id, role: 'participant' });
+          syncPollStatus();
         });
 
       socket.on('poll-state', ({ status, currentQuestion: serverQuestion }) => {
         if (status) poll.status = status;
-        if (serverQuestion) currentQuestion = serverQuestion;
 
         // Se ainda não escolheu perfil, a tela de perfil permanece prioritária e obrigatória
         if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
@@ -844,7 +844,12 @@
         if (status === 'finished') {
           showScreen('screenFinished');
         } else if (status === 'active' && serverQuestion) {
-          loadQuestion(serverQuestion);
+          if (!currentQuestion || currentQuestion.id !== serverQuestion.id) {
+            loadQuestion(serverQuestion);
+          } else if (!currentQuestion.votingOpen && serverQuestion.votingOpen) {
+            currentQuestion.votingOpen = true;
+            updateVotingIndicator(true);
+          }
         } else if (status === 'active' && !serverQuestion) {
           showScreen('screenWaiting');
         } else {
@@ -855,30 +860,34 @@
       socket.on('poll-started', (data) => {
         poll.status = 'active';
         const question = data && data.question;
-        if (question) currentQuestion = question;
 
         if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
           renderProfileSelection();
           return;
         }
 
-        if (currentQuestion) {
-          loadQuestion(currentQuestion);
+        if (question) {
+          loadQuestion(question);
         } else {
           syncPollStatus();
         }
       });
 
       socket.on('question-changed', ({ question }) => {
+        if (!question) return;
         poll.status = 'active';
-        currentQuestion = question;
 
         if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
           renderProfileSelection();
           return;
         }
 
-        loadQuestion(question);
+        if (!currentQuestion || currentQuestion.id !== question.id) {
+          loadQuestion(question);
+        } else if (!currentQuestion.votingOpen && question.votingOpen) {
+          currentQuestion.votingOpen = true;
+          updateVotingIndicator(true);
+        }
       });
 
       socket.on('voting-opened', ({ questionId }) => {
@@ -910,7 +919,6 @@
         if (res.ok) {
           const freshData = await res.json();
           poll.status = freshData.status;
-          if (freshData.currentQuestion) currentQuestion = freshData.currentQuestion;
 
           if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
             renderProfileSelection();
@@ -920,7 +928,15 @@
           if (freshData.status === 'finished') {
             showScreen('screenFinished');
           } else if (freshData.status === 'active' && freshData.currentQuestion) {
-            loadQuestion(freshData.currentQuestion);
+            // Avança para a pergunta nova imediatamente
+            if (!currentQuestion || currentQuestion.id !== freshData.currentQuestion.id) {
+              loadQuestion(freshData.currentQuestion);
+            } else if (!currentQuestion.votingOpen && freshData.currentQuestion.votingOpen) {
+              currentQuestion.votingOpen = true;
+              updateVotingIndicator(true);
+            }
+          } else if (freshData.status === 'draft') {
+            showScreen('screenWaiting');
           }
         }
       } catch (e) {
@@ -928,16 +944,14 @@
       }
     }
 
-    // Auto-sync while participant is waiting so they are never stuck
+    // Auto-sync polling every 1.5s so participant screen is always in lockstep with the presenter
     setInterval(() => {
-      if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+      if (!poll) return;
+      if (poll.hasProfiles && !hasValidProfileSelected()) {
         return;
       }
-      const waiting = document.getElementById('screenWaiting');
-      if (waiting && waiting.classList.contains('active')) {
-        syncPollStatus();
-      }
-    }, 2000);
+      syncPollStatus();
+    }, 1500);
 
     function escapeHtml(text) {
       if (!text) return '';

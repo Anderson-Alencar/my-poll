@@ -880,6 +880,39 @@ app.put('/api/polls/:id/status', (req, res) => {
   }
 });
 
+// 15. PUT /api/polls/:id/current-question - Change active question
+app.put('/api/polls/:id/current-question', (req, res) => {
+  try {
+    const poll = polls.get(req.params.id);
+    if (!poll) {
+      return res.status(404).json({ error: 'Enquete não encontrada' });
+    }
+    const { questionId } = req.body || {};
+    if (!questionId) {
+      return res.status(400).json({ error: 'ID da pergunta é obrigatório' });
+    }
+
+    const question = poll.questions.find(q => q.id === questionId);
+    if (!question) {
+      return res.status(404).json({ error: 'Pergunta não encontrada' });
+    }
+
+    poll.questions.forEach(q => { q.votingOpen = false; });
+    poll.currentQuestionId = questionId;
+    question.votingOpen = true;
+
+    io.to(`poll:${poll.id}`).emit('question-changed', {
+      question: serializeQuestion(question)
+    });
+    io.to(`poll:${poll.id}`).emit('voting-opened', { questionId });
+
+    return res.json({ success: true, currentQuestion: serializeQuestion(question) });
+  } catch (err) {
+    console.error('Error changing current question:', err);
+    return res.status(500).json({ error: 'Erro ao alterar pergunta ativa' });
+  }
+});
+
 // Global error handler
 app.use((err, req, res, next) => {
   console.error('Unhandled server error:', err);

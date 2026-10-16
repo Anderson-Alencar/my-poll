@@ -1109,9 +1109,20 @@
           item.votingOpen = (idx === currentQuestionIndex);
         });
         poll.currentQuestionId = q.id;
+
+        const canonicalId = poll.id || pollId;
         if (socket) {
-          socket.emit('change-question', { pollId, questionId: q.id });
+          socket.emit('change-question', { pollId: canonicalId, questionId: q.id });
         }
+        fetch(`/api/polls/${canonicalId}/current-question`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: q.id })
+        }).catch(() => {});
+        if (currentUser) {
+          savePollToFirestore(poll).catch(() => {});
+        }
+
         displayCurrentQuestion();
       }
     };
@@ -1124,9 +1135,20 @@
           item.votingOpen = (idx === currentQuestionIndex);
         });
         poll.currentQuestionId = q.id;
+
+        const canonicalId = poll.id || pollId;
         if (socket) {
-          socket.emit('change-question', { pollId, questionId: q.id });
+          socket.emit('change-question', { pollId: canonicalId, questionId: q.id });
         }
+        fetch(`/api/polls/${canonicalId}/current-question`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ questionId: q.id })
+        }).catch(() => {});
+        if (currentUser) {
+          savePollToFirestore(poll).catch(() => {});
+        }
+
         displayCurrentQuestion();
       }
     };
