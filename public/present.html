@@ -1063,6 +1063,13 @@
       }
     }
 
+    let showRecentAnswers = true;
+
+    window.toggleRecentAnswers = function() {
+      showRecentAnswers = !showRecentAnswers;
+      renderBars();
+    };
+
     function renderBars() {
       if (!currentResults) return;
       const container = document.getElementById('barsContainer');
@@ -1070,6 +1077,83 @@
       const totalWeighted = currentResults.totalWeightedVotes || 0;
       const totalDisplay = (totalWeighted % 1 === 0) ? totalWeighted : totalWeighted.toFixed(1);
       document.getElementById('totalVotesDisplay').textContent = `${totalDisplay} votos`;
+
+      if (currentResults.type === 'open') {
+        const correctVal = currentResults.correctWeighted !== undefined ? currentResults.correctWeighted : currentResults.correctRaw;
+        const incorrectVal = currentResults.incorrectWeighted !== undefined ? currentResults.incorrectWeighted : currentResults.incorrectRaw;
+
+        const correctValDisplay = (correctVal % 1 === 0) ? correctVal : correctVal.toFixed(1);
+        const incorrectValDisplay = (incorrectVal % 1 === 0) ? incorrectVal : incorrectVal.toFixed(1);
+
+        const correctPct = currentResults.correctPercent !== undefined ? currentResults.correctPercent : 0;
+        const incorrectPct = currentResults.incorrectPercent !== undefined ? currentResults.incorrectPercent : 0;
+
+        const recent = Array.isArray(currentResults.recentAnswers) ? currentResults.recentAnswers : [];
+
+        container.innerHTML = `
+          <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+            <!-- Correct Bar -->
+            <div class="bar-row">
+              <div class="bar-info">
+                <span style="color: #34d399; font-weight: 700;">✅ Respostas Certas (Acertos)</span>
+                <span style="font-weight: 700; color: #34d399;">${correctPct}% <small style="font-size: 0.95rem; color: #94a3b8; font-weight: 500;">(${correctValDisplay} votos)</small></span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${correctPct}%; background: linear-gradient(90deg, #059669, #10b981);">
+                  ${correctPct > 8 ? `${correctPct}%` : ''}
+                </div>
+              </div>
+            </div>
+
+            <!-- Incorrect Bar -->
+            <div class="bar-row">
+              <div class="bar-info">
+                <span style="color: #fca5a5; font-weight: 700;">❌ Respostas Incorretas (Erros)</span>
+                <span style="font-weight: 700; color: #fca5a5;">${incorrectPct}% <small style="font-size: 0.95rem; color: #94a3b8; font-weight: 500;">(${incorrectValDisplay} votos)</small></span>
+              </div>
+              <div class="bar-track">
+                <div class="bar-fill" style="width: ${incorrectPct}%; background: linear-gradient(90deg, #dc2626, #ef4444);">
+                  ${incorrectPct > 8 ? `${incorrectPct}%` : ''}
+                </div>
+              </div>
+            </div>
+
+            <!-- Recent Text Submissions Feed -->
+            <div style="margin-top: 0.5rem; background: rgba(15, 23, 42, 0.4); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 0.75rem; padding: 1rem;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.75rem;">
+                <span style="font-size: 0.95rem; color: #94a3b8; font-weight: 600; display: flex; align-items: center; gap: 0.5rem;">
+                  <span>💬 Últimas Respostas Enviadas</span>
+                  ${recent.length > 0 ? `<span style="font-size: 0.75rem; background: rgba(99, 102, 241, 0.2); color: #818cf8; border: 1px solid rgba(99, 102, 241, 0.3); padding: 0.1rem 0.5rem; border-radius: 9999px; font-weight: 600;">${recent.length}</span>` : ''}
+                </span>
+                <button type="button" onclick="toggleRecentAnswers()" style="background: ${showRecentAnswers ? 'rgba(99, 102, 241, 0.2)' : 'rgba(255, 255, 255, 0.08)'}; border: 1px solid ${showRecentAnswers ? 'rgba(99, 102, 241, 0.4)' : 'rgba(255, 255, 255, 0.15)'}; color: ${showRecentAnswers ? '#a5b4fc' : '#94a3b8'}; padding: 0.3rem 0.75rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 0.5rem; transition: all 0.2s ease;" title="${showRecentAnswers ? 'Clique para ocultar as respostas' : 'Clique para exibir as respostas'}">
+                  <span>${showRecentAnswers ? '👁️ Exibindo respostas' : '🙈 Respostas ocultas'}</span>
+                  <div style="width: 28px; height: 16px; background: ${showRecentAnswers ? '#6366f1' : '#475569'}; border-radius: 9999px; position: relative; transition: background 0.2s ease;">
+                    <div style="width: 12px; height: 12px; background: #ffffff; border-radius: 50%; position: absolute; top: 2px; left: ${showRecentAnswers ? '14px' : '2px'}; transition: left 0.2s ease;"></div>
+                  </div>
+                </button>
+              </div>
+
+              ${!showRecentAnswers ? `
+                <div style="font-size: 0.9rem; color: #64748b; font-style: italic; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0;">
+                  <span>🔒 Visibilidade das respostas individuais desativada pelo apresentador.</span>
+                </div>
+              ` : recent.length === 0 ? `
+                <div style="font-size: 0.9rem; color: #64748b; font-style: italic; padding: 0.5rem 0;">Aguardando envio das respostas pelos participantes...</div>
+              ` : `
+                <div style="display: flex; flex-wrap: wrap; gap: 0.5rem; max-height: 180px; overflow-y: auto; padding-right: 0.25rem;">
+                  ${recent.map(ans => `
+                    <div style="background: ${ans.isCorrect ? 'rgba(16, 185, 129, 0.15)' : 'rgba(239, 68, 68, 0.15)'}; border: 1px solid ${ans.isCorrect ? 'rgba(16, 185, 129, 0.35)' : 'rgba(239, 68, 68, 0.35)'}; padding: 0.4rem 0.75rem; border-radius: 9999px; font-size: 0.9rem; color: #f8fafc; display: flex; align-items: center; gap: 0.4rem;">
+                      <span>${ans.isCorrect ? '✅' : '❌'}</span>
+                      <span>${escapeHtml(ans.textAnswer)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              `}
+            </div>
+          </div>
+        `;
+        return;
+      }
 
       container.innerHTML = currentResults.options.map((opt, i) => {
         const color = colors[i % colors.length];

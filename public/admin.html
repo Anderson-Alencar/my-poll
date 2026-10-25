@@ -954,11 +954,27 @@
       <h2>Adicionar Pergunta</h2>
       <form id="formQuestion">
         <div class="form-group" style="margin-bottom: 1rem;">
+          <label>Tipo de Pergunta *</label>
+          <select id="qType" class="form-control" onchange="onQuestionTypeChange()">
+            <option value="multiple">Múltipla Escolha</option>
+            <option value="open">Resposta Aberta (Texto Livre)</option>
+          </select>
+        </div>
+
+        <div class="form-group" style="margin-bottom: 1rem;">
           <label>Enunciado da Pergunta *</label>
           <input type="text" id="qText" class="form-control" placeholder="Ex: Qual tecnologia você prefere?" required />
         </div>
 
-        <div class="form-group" style="margin-bottom: 1rem;">
+        <div id="qCorrectAnswerGroup" class="form-group" style="margin-bottom: 1rem; display: none;">
+          <label>Resposta Correta (Gabarito) *</label>
+          <input type="text" id="qCorrectAnswer" class="form-control" placeholder="Ex: Brasilia, Paris, 42..." />
+          <p style="font-size: 0.8rem; color: var(--text-muted); margin-top: 0.25rem;">
+            O sistema avaliará a resposta do participante de forma inteligente (ignorando acentos e maiúsculas/minúsculas).
+          </p>
+        </div>
+
+        <div id="qOptionsGroup" class="form-group" style="margin-bottom: 1rem;">
           <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem;">
             <label>Alternativas de Resposta</label>
             <button type="button" class="btn btn-secondary btn-sm" onclick="addOptionRow()">+ Alternativa</button>
@@ -1492,36 +1508,53 @@
         return;
       }
 
-      container.innerHTML = questions.map((q, index) => `
-        <div class="question-item">
-          <div class="question-header">
-            <div>
-              <strong style="color: #818cf8; font-size: 0.85rem;">Pergunta #${index + 1}</strong>
-              <div style="font-size: 1.1rem; font-weight: 600; margin-top: 0.2rem;">${escapeHtml(q.text)}</div>
-            </div>
-            <div style="display: flex; gap: 0.5rem;">
-              <button class="btn btn-danger btn-sm" onclick="deleteQuestion('${q.id}')">Excluir</button>
-            </div>
-          </div>
-          <div>
-            <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Alternativas:</div>
-            ${(q.options || []).map(opt => `
-              <div class="option-pill">
-                <span>${escapeHtml(opt.text)}</span>
-                ${currentPoll.hasProfiles && opt.weights ? `
-                  <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
-                    ${Object.entries(opt.weights).map(([profId, w]) => {
-                      const prof = (currentPoll.profiles || []).find(p => p.id === profId);
-                      const name = prof ? prof.name : profId;
-                      return `<span class="weight-chip">${escapeHtml(name)}: ${w}</span>`;
-                    }).join('')}
-                  </div>
-                ` : ''}
+      container.innerHTML = questions.map((q, index) => {
+        const isTypeOpen = q.type === 'open';
+        const typeBadge = isTypeOpen
+          ? `<span class="badge" style="background: rgba(16, 185, 129, 0.2); color: #34d399;">✏️ Resposta Aberta</span>`
+          : `<span class="badge" style="background: rgba(99, 102, 241, 0.2); color: #a5b4fc;">🔘 Múltipla Escolha</span>`;
+
+        return `
+          <div class="question-item">
+            <div class="question-header">
+              <div>
+                <div style="display: flex; gap: 0.5rem; align-items: center; margin-bottom: 0.25rem;">
+                  <strong style="color: #818cf8; font-size: 0.85rem;">Pergunta #${index + 1}</strong>
+                  ${typeBadge}
+                </div>
+                <div style="font-size: 1.1rem; font-weight: 600; margin-top: 0.2rem;">${escapeHtml(q.text)}</div>
               </div>
-            `).join('')}
+              <div style="display: flex; gap: 0.5rem;">
+                <button class="btn btn-danger btn-sm" onclick="deleteQuestion('${q.id}')">Excluir</button>
+              </div>
+            </div>
+
+            ${isTypeOpen ? `
+              <div style="background: rgba(15, 23, 42, 0.6); border: 1px solid #334155; padding: 0.75rem 1rem; border-radius: 0.5rem; font-size: 0.9rem; color: #cbd5e1; margin-top: 0.35rem;">
+                🎯 <strong style="color: #34d399;">Gabarito definido:</strong> "${escapeHtml(q.correctAnswer || 'Sem gabarito')}"
+              </div>
+            ` : `
+              <div>
+                <div style="font-size: 0.8rem; color: var(--text-muted); margin-bottom: 0.25rem;">Alternativas:</div>
+                ${(q.options || []).map(opt => `
+                  <div class="option-pill">
+                    <span>${escapeHtml(opt.text)}</span>
+                    ${currentPoll.hasProfiles && opt.weights ? `
+                      <div style="display: flex; gap: 0.25rem; flex-wrap: wrap;">
+                        ${Object.entries(opt.weights).map(([profId, w]) => {
+                          const prof = (currentPoll.profiles || []).find(p => p.id === profId);
+                          const name = prof ? prof.name : profId;
+                          return `<span class="weight-chip">${escapeHtml(name)}: ${w}</span>`;
+                        }).join('')}
+                      </div>
+                    ` : ''}
+                  </div>
+                `).join('')}
+              </div>
+            `}
           </div>
-        </div>
-      `).join('');
+        `;
+      }).join('');
     }
 
     window.deleteQuestion = async function(questionId) {
@@ -1536,6 +1569,30 @@
       }
     };
 
+    window.onQuestionTypeChange = function() {
+      const typeSelect = document.getElementById('qType');
+      const type = typeSelect ? typeSelect.value : 'multiple';
+      const answerGroup = document.getElementById('qCorrectAnswerGroup');
+      const optionsGroup = document.getElementById('qOptionsGroup');
+      const answerInput = document.getElementById('qCorrectAnswer');
+
+      if (type === 'open') {
+        if (answerGroup) answerGroup.style.display = 'block';
+        if (optionsGroup) optionsGroup.style.display = 'none';
+        if (answerInput) answerInput.setAttribute('required', 'required');
+        document.querySelectorAll('#optionsContainer .opt-text').forEach(inp => {
+          inp.removeAttribute('required');
+        });
+      } else {
+        if (answerGroup) answerGroup.style.display = 'none';
+        if (optionsGroup) optionsGroup.style.display = 'block';
+        if (answerInput) answerInput.removeAttribute('required');
+        document.querySelectorAll('#optionsContainer .opt-text').forEach(inp => {
+          inp.setAttribute('required', 'required');
+        });
+      }
+    };
+
     // Modal helpers
     window.openNewPollModal = function() {
       document.getElementById('formNewPoll').reset();
@@ -1546,10 +1603,15 @@
 
     window.openAddQuestionModal = function() {
       document.getElementById('formQuestion').reset();
+      const typeSelect = document.getElementById('qType');
+      if (typeSelect) typeSelect.value = 'multiple';
+
       const container = document.getElementById('optionsContainer');
       container.innerHTML = '';
       addOptionRow();
       addOptionRow();
+
+      onQuestionTypeChange();
       document.getElementById('modalQuestion').classList.add('open');
     };
 
@@ -1587,6 +1649,10 @@
       div.id = optId;
       div.style.cssText = 'background: #0f172a; padding: 0.75rem; border-radius: 0.5rem; border: 1px solid #334155;';
 
+      const typeSelect = document.getElementById('qType');
+      const isTypeOpen = typeSelect && typeSelect.value === 'open';
+      const reqAttr = isTypeOpen ? '' : 'required';
+
       let weightsInputsHtml = '';
       if (currentPoll && currentPoll.hasProfiles && Array.isArray(currentPoll.profiles) && currentPoll.profiles.length > 0) {
         weightsInputsHtml = `
@@ -1604,7 +1670,7 @@
 
       div.innerHTML = `
         <div style="display: flex; gap: 0.5rem; align-items: center;">
-          <input type="text" class="form-control opt-text" placeholder="Texto da alternativa" style="flex: 1;" required />
+          <input type="text" class="form-control opt-text" placeholder="Texto da alternativa" style="flex: 1;" ${reqAttr} />
           <button type="button" class="btn btn-danger btn-sm" onclick="document.getElementById('${optId}').remove()">✕</button>
         </div>
         ${weightsInputsHtml}
@@ -1672,40 +1738,52 @@
       e.preventDefault();
       if (!currentPoll) return;
 
+      const qType = document.getElementById('qType') ? document.getElementById('qType').value : 'multiple';
       const text = document.getElementById('qText').value.trim();
-      const optionRows = document.querySelectorAll('#optionsContainer > div');
+      const correctAnswer = document.getElementById('qCorrectAnswer') ? document.getElementById('qCorrectAnswer').value.trim() : '';
+
       const options = [];
 
-      optionRows.forEach((r, idx) => {
-        const optText = r.querySelector('.opt-text').value.trim();
-        if (optText) {
-          const weights = {};
-          if (currentPoll.hasProfiles) {
-            r.querySelectorAll('.opt-weight-input').forEach(wInput => {
-              const profId = wInput.dataset.profId;
-              const val = Math.max(1, Math.round(Number(wInput.value || 1)));
-              weights[profId] = val;
+      if (qType === 'open') {
+        if (!correctAnswer) {
+          alert('Por favor, informe a resposta correta para a pergunta aberta!');
+          return;
+        }
+      } else {
+        const optionRows = document.querySelectorAll('#optionsContainer > div');
+        optionRows.forEach((r, idx) => {
+          const optText = r.querySelector('.opt-text').value.trim();
+          if (optText) {
+            const weights = {};
+            if (currentPoll.hasProfiles) {
+              r.querySelectorAll('.opt-weight-input').forEach(wInput => {
+                const profId = wInput.dataset.profId;
+                const val = Math.max(1, Math.round(Number(wInput.value || 1)));
+                weights[profId] = val;
+              });
+            }
+
+            options.push({
+              id: 'opt_' + Math.random().toString(36).substring(2, 9),
+              text: optText,
+              orderNum: idx + 1,
+              weights
             });
           }
+        });
 
-          options.push({
-            id: 'opt_' + Math.random().toString(36).substring(2, 9),
-            text: optText,
-            orderNum: idx + 1,
-            weights
-          });
+        if (options.length < 2) {
+          alert('A pergunta de múltipla escolha deve ter pelo menos 2 alternativas!');
+          return;
         }
-      });
-
-      if (options.length < 2) {
-        alert('A pergunta deve ter pelo menos 2 alternativas!');
-        return;
       }
 
       try {
         const newQuestion = {
           id: 'q_' + Math.random().toString(36).substring(2, 9),
           text,
+          type: qType,
+          correctAnswer: qType === 'open' ? correctAnswer : '',
           orderNum: (currentPoll.questions || []).length + 1,
           votingOpen: false,
           options

@@ -199,11 +199,26 @@ export async function savePollToFirestore(poll) {
   const path = `polls/${poll.id}`;
   try {
     const now = new Date().toISOString();
+    const cleanQuestions = Array.isArray(poll.questions) ? poll.questions.map(q => ({
+      id: String(q.id || ''),
+      text: String(q.text || '').trim(),
+      type: q.type === 'open' ? 'open' : 'multiple',
+      correctAnswer: String(q.correctAnswer || '').trim(),
+      orderNum: Number(q.orderNum || 1),
+      votingOpen: Boolean(q.votingOpen),
+      options: Array.isArray(q.options) ? q.options.map((opt, idx) => ({
+        id: String(opt.id || ''),
+        text: String(opt.text || '').trim(),
+        orderNum: Number(opt.orderNum || idx + 1),
+        weights: (opt.weights && typeof opt.weights === 'object') ? opt.weights : {}
+      })) : []
+    })) : [];
+
     const dataToSave = {
       id: poll.id,
-      title: poll.title,
-      description: poll.description || '',
-      code: poll.code,
+      title: String(poll.title || '').trim(),
+      description: String(poll.description || '').trim(),
+      code: String(poll.code || '').trim().toUpperCase(),
       hasProfiles: Boolean(poll.hasProfiles),
       status: poll.status || 'draft',
       currentQuestionId: poll.currentQuestionId || null,
@@ -212,7 +227,7 @@ export async function savePollToFirestore(poll) {
       createdAt: poll.createdAt || now,
       updatedAt: now,
       profiles: Array.isArray(poll.profiles) ? poll.profiles : [],
-      questions: Array.isArray(poll.questions) ? poll.questions : []
+      questions: cleanQuestions
     };
     await setDoc(doc(db, 'polls', poll.id), dataToSave);
     return dataToSave;

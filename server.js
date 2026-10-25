@@ -98,6 +98,21 @@ function serializePoll(poll) {
 }
 
 /**
+ * Normaliza textos para comparação insensível a maiúsculas, acentos e espaços extras.
+ * @param {string} str
+ * @returns {string}
+ */
+function normalizeText(str) {
+  if (str == null) return '';
+  return String(str)
+    .trim()
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ');
+}
+
+/**
  * Serialize a question object to JSON-safe structure (excludes votes).
  * @param {Object} question
  * @returns {Object} JSON-safe question
@@ -106,6 +121,8 @@ function serializeQuestion(question) {
   return {
     id: question.id,
     text: question.text,
+    type: question.type || 'multiple',
+    correctAnswer: question.correctAnswer || '',
     orderNum: question.orderNum,
     votingOpen: question.votingOpen,
     options: Array.isArray(question.options)
@@ -120,11 +137,85 @@ function serializeQuestion(question) {
 }
 
 /**
- * Calculate rawVotes, weightedVotes, and percentage per option for a question.
+ * Calculate rawVotes, weightedVotes, and percentage per option or per correct/incorrect for open questions.
  * @param {Object} question
  * @returns {Object} Calculated results
  */
 function calculateResults(question) {
+  const isQuestionOpen = question.type === 'open';
+
+  if (isQuestionOpen) {
+    let correctRaw = 0;
+    let incorrectRaw = 0;
+    let correctWeighted = 0;
+    let incorrectWeighted = 0;
+    let totalRawVotes = 0;
+    let totalWeightedVotes = 0;
+
+    const recentAnswers = [];
+
+    if (question.votes instanceof Map) {
+      const targetNorm = normalizeText(question.correctAnswer);
+      for (const vote of question.votes.values()) {
+        const weight = normalizeWeight(vote.weight);
+        const userNorm = normalizeText(vote.textAnswer);
+        const isCorrect = (vote.isCorrect !== undefined)
+          ? Boolean(vote.isCorrect)
+          : (userNorm === targetNorm && targetNorm.length > 0);
+
+        totalRawVotes += 1;
+        totalWeightedVotes += weight;
+
+        if (isCorrect) {
+          correctRaw += 1;
+          correctWeighted += weight;
+        } else {
+          incorrectRaw += 1;
+          incorrectWeighted += weight;
+        }
+
+        if (vote.textAnswer) {
+          recentAnswers.push({
+            textAnswer: vote.textAnswer,
+            isCorrect,
+            createdAt: vote.createdAt || new Date().toISOString()
+          });
+        }
+      }
+    }
+
+    totalWeightedVotes = Math.round(totalWeightedVotes * 1000) / 1000;
+    correctWeighted = Math.round(correctWeighted * 1000) / 1000;
+    incorrectWeighted = Math.round(incorrectWeighted * 1000) / 1000;
+
+    let correctPercent = 0;
+    let incorrectPercent = 0;
+    if (totalWeightedVotes > 0) {
+      correctPercent = Math.round(((correctWeighted / totalWeightedVotes) * 100) * 10) / 10;
+      incorrectPercent = Math.round(((incorrectWeighted / totalWeightedVotes) * 100) * 10) / 10;
+    }
+
+    recentAnswers.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+
+    return {
+      id: question.id,
+      questionId: question.id,
+      text: question.text,
+      type: 'open',
+      correctAnswer: question.correctAnswer || '',
+      totalRawVotes,
+      totalWeightedVotes,
+      correctRaw,
+      incorrectRaw,
+      correctWeighted,
+      incorrectWeighted,
+      correctPercent,
+      incorrectPercent,
+      recentAnswers: recentAnswers.slice(0, 20),
+      options: []
+    };
+  }
+
   const rawCounts = new Map();
   const weightedCounts = new Map();
 
@@ -179,6 +270,7 @@ function calculateResults(question) {
     id: question.id,
     questionId: question.id,
     text: question.text,
+    type: 'multiple',
     totalRawVotes,
     totalWeightedVotes,
     options
@@ -326,6 +418,8 @@ app.post('/api/polls/sync', (req, res) => {
         return {
           id: q.id || uuidv4(),
           text: String(q.text || '').trim(),
+          type: q.type || 'multiple',
+          correctAnswer: String(q.correctAnswer || '').trim(),
           orderNum: q.orderNum || idx + 1,
           votingOpen: Boolean(q.votingOpen),
           options: Array.isArray(q.options) ? q.options.map((opt, oIdx) => ({
@@ -476,9 +570,16 @@ app.post('/api/polls/:id/questions', (req, res) => {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
 
-    const { text, options } = req.body;
+    const { text, options, type = 'multiple', correctAnswer = '' } = req.body;
     if (!text || typeof text !== 'string' || !text.trim()) {
       return res.status(400).json({ error: 'Texto da pergunta é obrigatório' });
+    }
+
+    const qType = type === 'open' ? 'open' : 'multiple';
+    const cleanCorrectAnswer = String(correctAnswer || '').trim();
+
+    if (qType === 'open' && !cleanCorrectAnswer) {
+      return res.status(400).json({ error: 'A resposta correta é obrigatória para perguntas de resposta aberta' });
     }
 
     const orderNum = poll.questions.length + 1;
@@ -502,6 +603,8 @@ app.post('/api/polls/:id/questions', (req, res) => {
     const question = {
       id: uuidv4(),
       text: text.trim(),
+      type: qType,
+      correctAnswer: cleanCorrectAnswer,
       orderNum,
       votingOpen: false,
       options: formattedOptions,
@@ -526,13 +629,21 @@ app.put('/api/questions/:questionId', (req, res) => {
     }
 
     const { question } = match;
-    const { text, options } = req.body;
+    const { text, options, type, correctAnswer } = req.body;
 
     if (text !== undefined) {
       if (typeof text !== 'string' || !text.trim()) {
         return res.status(400).json({ error: 'Texto da pergunta não pode ser vazio' });
       }
       question.text = text.trim();
+    }
+
+    if (type !== undefined) {
+      question.type = type === 'open' ? 'open' : 'multiple';
+    }
+
+    if (correctAnswer !== undefined) {
+      question.correctAnswer = String(correctAnswer || '').trim();
     }
 
     if (Array.isArray(options)) {
@@ -564,11 +675,13 @@ app.put('/api/questions/:questionId', (req, res) => {
 
       question.options = updatedOptions;
 
-      // Clean up votes for removed options
-      const validOptionIds = new Set(updatedOptions.map(o => o.id));
-      for (const [participantId, vote] of question.votes.entries()) {
-        if (!validOptionIds.has(vote.optionId)) {
-          question.votes.delete(participantId);
+      // Clean up votes for removed options if multiple choice
+      if (question.type === 'multiple') {
+        const validOptionIds = new Set(updatedOptions.map(o => o.id));
+        for (const [participantId, vote] of question.votes.entries()) {
+          if (vote.optionId && !validOptionIds.has(vote.optionId)) {
+            question.votes.delete(participantId);
+          }
         }
       }
     }
@@ -631,16 +744,7 @@ app.get('/api/polls/:id/results', (req, res) => {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
 
-    const questionsResults = poll.questions.map(q => {
-      const calculated = calculateResults(q);
-      return {
-        id: q.id,
-        text: q.text,
-        totalRawVotes: calculated.totalRawVotes,
-        totalWeightedVotes: calculated.totalWeightedVotes,
-        options: calculated.options
-      };
-    });
+    const questionsResults = poll.questions.map(q => calculateResults(q));
 
     return res.json({
       pollId: poll.id,
@@ -669,13 +773,7 @@ app.get('/api/polls/:id/results/:questionId', (req, res) => {
 
     const calculated = calculateResults(question);
 
-    return res.json({
-      questionId: question.id,
-      text: question.text,
-      totalRawVotes: calculated.totalRawVotes,
-      totalWeightedVotes: calculated.totalWeightedVotes,
-      options: calculated.options
-    });
+    return res.json(calculated);
   } catch (err) {
     console.error('Error fetching question results:', err);
     return res.status(500).json({ error: 'Erro ao buscar resultados da pergunta' });
@@ -709,8 +807,9 @@ app.get('/api/polls/join/:code', (req, res) => {
           currentQuestion = {
             id: q.id,
             text: q.text,
+            type: q.type || 'multiple',
             votingOpen: true,
-            options: q.options.map(opt => ({
+            options: (q.options || []).map(opt => ({
               id: opt.id,
               text: opt.text
             }))
@@ -768,8 +867,8 @@ app.get('/api/polls/:id/qrcode', async (req, res) => {
 });
 
 // Helper to register vote (shared by Socket.IO and HTTP fallback)
-function registerVote({ pollId, questionId, optionId, participantId, profileId }) {
-  if (!pollId || !questionId || !optionId || !participantId) {
+function registerVote({ pollId, questionId, optionId, textAnswer, participantId, profileId }) {
+  if (!pollId || !questionId || !participantId) {
     return { success: false, error: 'Dados do voto incompletos' };
   }
 
@@ -792,10 +891,7 @@ function registerVote({ pollId, questionId, optionId, participantId, profileId }
     return { success: false, error: 'Seu voto já foi confirmado e não pode ser alterado.' };
   }
 
-  const option = question.options.find(o => o.id === optionId);
-  if (!option) {
-    return { success: false, error: 'Opção de voto inválida' };
-  }
+  const isQuestionOpen = question.type === 'open';
 
   let weight = 1;
   let validProfileId = null;
@@ -804,12 +900,56 @@ function registerVote({ pollId, questionId, optionId, participantId, profileId }
     const profile = poll.profiles.find(p => p.id === profileId);
     if (profile) {
       validProfileId = profile.id;
-      if (option.weights && option.weights[profile.id] !== undefined) {
-        weight = normalizeWeight(option.weights[profile.id]);
+      if (!isQuestionOpen && optionId && question.options) {
+        const option = question.options.find(o => o.id === optionId);
+        if (option && option.weights && option.weights[profile.id] !== undefined) {
+          weight = normalizeWeight(option.weights[profile.id]);
+        } else if (profile.weight !== undefined) {
+          weight = normalizeWeight(profile.weight);
+        }
       } else if (profile.weight !== undefined) {
         weight = normalizeWeight(profile.weight);
       }
     }
+  }
+
+  if (isQuestionOpen) {
+    const cleanAnswer = String(textAnswer || '').trim();
+    if (!cleanAnswer) {
+      return { success: false, error: 'Por favor, digite sua resposta livre.' };
+    }
+
+    const userNorm = normalizeText(cleanAnswer);
+    const targetNorm = normalizeText(question.correctAnswer);
+    const isCorrect = userNorm === targetNorm && targetNorm.length > 0;
+
+    question.votes.set(participantId, {
+      textAnswer: cleanAnswer,
+      isCorrect,
+      profileId: validProfileId,
+      weight,
+      createdAt: new Date().toISOString()
+    });
+
+    debounceVoteUpdate(pollId, question);
+
+    return {
+      success: true,
+      type: 'open',
+      isCorrect,
+      correctAnswer: question.correctAnswer || '',
+      textAnswer: cleanAnswer
+    };
+  }
+
+  // Multiple Choice Question
+  if (!optionId) {
+    return { success: false, error: 'Opção de voto é obrigatória' };
+  }
+
+  const option = question.options.find(o => o.id === optionId);
+  if (!option) {
+    return { success: false, error: 'Opção de voto inválida' };
   }
 
   question.votes.set(participantId, {
@@ -819,18 +959,17 @@ function registerVote({ pollId, questionId, optionId, participantId, profileId }
     createdAt: new Date().toISOString()
   });
 
-  // Debounce emission of vote-updated event to WebSocket listeners
   debounceVoteUpdate(pollId, question);
 
-  return { success: true };
+  return { success: true, type: 'multiple', optionId };
 }
 
 // 13. POST /api/polls/:id/vote - HTTP vote endpoint for serverless environments (Vercel)
 app.post('/api/polls/:id/vote', (req, res) => {
   try {
     const pollId = req.params.id;
-    const { questionId, optionId, participantId, profileId } = req.body || {};
-    const result = registerVote({ pollId, questionId, optionId, participantId, profileId });
+    const { questionId, optionId, textAnswer, participantId, profileId } = req.body || {};
+    const result = registerVote({ pollId, questionId, optionId, textAnswer, participantId, profileId });
     if (!result.success) {
       return res.status(400).json(result);
     }

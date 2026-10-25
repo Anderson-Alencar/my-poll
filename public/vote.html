@@ -415,7 +415,7 @@
         <h2 class="question-title" id="qTitle">Título da pergunta</h2>
 
         <div class="options-list" id="optionsList">
-          <!-- Option buttons rendered here -->
+          <!-- Option buttons or free text input rendered here -->
         </div>
 
         <!-- Confirm vote button section -->
@@ -431,6 +431,13 @@
           <div class="vote-locked-icon">🔒 ✓</div>
           <div class="vote-locked-title">Voto Confirmado!</div>
           <div class="vote-locked-desc">Seu voto foi registrado com sucesso e não pode ser alterado.</div>
+        </div>
+
+        <!-- Open Text Feedback Card -->
+        <div id="openFeedbackCard" class="vote-locked-card" style="display: none;">
+          <div id="openFeedbackIcon" class="vote-locked-icon">🎉</div>
+          <div id="openFeedbackTitle" class="vote-locked-title">Resposta Registrada!</div>
+          <div id="openFeedbackDesc" class="vote-locked-desc"></div>
         </div>
       </div>
     </div>
@@ -599,7 +606,6 @@
     function loadQuestion(q) {
       currentQuestion = q;
 
-      // Se ainda não escolheu perfil em enquete com perfis, não pode ver as perguntas
       if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
         renderProfileSelection();
         return;
@@ -611,20 +617,31 @@
 
       document.getElementById('qTitle').textContent = q.text;
 
-      // Check if user already confirmed vote for this question in localStorage
       const voteKey = `voted_${poll.id}_${q.id}`;
-      const savedVotedOpt = localStorage.getItem(voteKey);
+      const savedVotedData = localStorage.getItem(voteKey);
 
-      if (savedVotedOpt) {
+      let savedResult = null;
+      if (savedVotedData) {
         hasConfirmedVote = true;
-        selectedOptionId = savedVotedOpt;
+        try {
+          savedResult = JSON.parse(savedVotedData);
+          if (typeof savedResult === 'object' && savedResult !== null) {
+            selectedOptionId = savedResult.optionId || null;
+          } else {
+            selectedOptionId = savedVotedData;
+            savedResult = { optionId: savedVotedData };
+          }
+        } catch (e) {
+          selectedOptionId = savedVotedData;
+          savedResult = { optionId: savedVotedData };
+        }
       } else {
         hasConfirmedVote = false;
       }
 
       updateVotingIndicator(q.votingOpen);
-      renderOptions(q.options, q.votingOpen);
-      updateConfirmSectionUI();
+      renderOptions(q.options, q.votingOpen, savedResult);
+      updateConfirmSectionUI(savedResult);
 
       showScreen('screenQuestion');
     }
@@ -644,7 +661,6 @@
         text.textContent = 'Votação Fechada';
       }
 
-      // If user has not confirmed yet, enable/disable options based on isOpen
       document.querySelectorAll('.option-btn').forEach(btn => {
         if (hasConfirmedVote || !isOpen) {
           btn.disabled = true;
@@ -653,9 +669,18 @@
         }
       });
 
+      const openInput = document.getElementById('openTextAnswerInput');
+      if (openInput) {
+        if (hasConfirmedVote || !isOpen) {
+          openInput.disabled = true;
+        } else {
+          openInput.disabled = false;
+        }
+      }
+
       const btnConfirm = document.getElementById('btnConfirmVote');
       if (btnConfirm) {
-        if (!isOpen || hasConfirmedVote || !selectedOptionId) {
+        if (!isOpen || hasConfirmedVote) {
           btnConfirm.disabled = true;
         } else {
           btnConfirm.disabled = false;
@@ -663,9 +688,32 @@
       }
     }
 
-    function renderOptions(options, isOpen) {
+    function renderOptions(options, isOpen, savedResult) {
       const container = document.getElementById('optionsList');
-      container.innerHTML = options.map(opt => {
+
+      if (currentQuestion && currentQuestion.type === 'open') {
+        const savedText = savedResult ? (savedResult.textAnswer || '') : '';
+        const disabledAttr = (!isOpen || hasConfirmedVote) ? 'disabled' : '';
+
+        container.innerHTML = `
+          <div style="display: flex; flex-direction: column; gap: 0.75rem;">
+            <label style="font-size: 0.9rem; font-weight: 600; color: #cbd5e1;">Sua resposta por extenso:</label>
+            <input 
+              type="text" 
+              id="openTextAnswerInput" 
+              class="profile-btn" 
+              style="text-align: left; background: #0f172a; border-color: #334155; font-size: 1rem; color: #f8fafc;" 
+              placeholder="Digite sua resposta aqui..." 
+              value="${escapeHtml(savedText)}"
+              ${disabledAttr}
+              oninput="onOpenAnswerInput(this.value)"
+            />
+          </div>
+        `;
+        return;
+      }
+
+      container.innerHTML = (options || []).map(opt => {
         const isSelected = (selectedOptionId === opt.id);
         const isLocked = isSelected && hasConfirmedVote;
         let classes = 'option-btn';
@@ -685,13 +733,25 @@
       }).join('');
     }
 
+    function onOpenAnswerInput(val) {
+      const btnConfirm = document.getElementById('btnConfirmVote');
+      if (btnConfirm) {
+        if (val.trim().length > 0 && currentQuestion && currentQuestion.votingOpen && !hasConfirmedVote && !isSubmitting) {
+          btnConfirm.disabled = false;
+          btnConfirm.innerHTML = '<span>🔒</span> Enviar Resposta';
+        } else {
+          btnConfirm.disabled = true;
+          btnConfirm.innerHTML = '<span>✏️</span> Digite sua resposta';
+        }
+      }
+    }
+
     function selectOption(optionId) {
       if (hasConfirmedVote || !currentQuestion || !currentQuestion.votingOpen || isSubmitting) return;
       hideError();
 
       selectedOptionId = optionId;
 
-      // Update UI selection on buttons
       document.querySelectorAll('.option-btn').forEach(btn => {
         btn.classList.remove('selected');
         const icon = btn.querySelector('.icon-tag');
@@ -708,36 +768,89 @@
       updateConfirmSectionUI();
     }
 
-    function updateConfirmSectionUI() {
+    function updateConfirmSectionUI(savedResult) {
       const confirmContainer = document.getElementById('confirmVoteContainer');
       const lockedCard = document.getElementById('voteLockedCard');
+      const openCard = document.getElementById('openFeedbackCard');
       const btnConfirm = document.getElementById('btnConfirmVote');
 
       if (hasConfirmedVote) {
         confirmContainer.style.display = 'none';
-        lockedCard.style.display = 'flex';
+
+        if (currentQuestion && currentQuestion.type === 'open') {
+          lockedCard.style.display = 'none';
+          openCard.style.display = 'flex';
+
+          const isCorrect = savedResult ? savedResult.isCorrect : false;
+          const corrAns = savedResult ? savedResult.correctAnswer : '';
+
+          if (isCorrect) {
+            openCard.style.borderColor = 'rgba(16, 185, 129, 0.5)';
+            openCard.style.background = 'rgba(16, 185, 129, 0.15)';
+            document.getElementById('openFeedbackIcon').textContent = '🎉';
+            document.getElementById('openFeedbackTitle').textContent = 'Resposta Correta!';
+            document.getElementById('openFeedbackTitle').style.color = '#34d399';
+            document.getElementById('openFeedbackDesc').textContent = 'Parabéns! Sua resposta está totalmente certa.';
+          } else {
+            openCard.style.borderColor = 'rgba(239, 68, 68, 0.5)';
+            openCard.style.background = 'rgba(239, 68, 68, 0.15)';
+            document.getElementById('openFeedbackIcon').textContent = '❌';
+            document.getElementById('openFeedbackTitle').textContent = 'Resposta Incorreta';
+            document.getElementById('openFeedbackTitle').style.color = '#fca5a5';
+            document.getElementById('openFeedbackDesc').innerHTML = `A resposta correta era: <strong style="color: white;">"${escapeHtml(corrAns)}"</strong>`;
+          }
+        } else {
+          openCard.style.display = 'none';
+          lockedCard.style.display = 'flex';
+        }
       } else {
         lockedCard.style.display = 'none';
+        openCard.style.display = 'none';
         confirmContainer.style.display = 'flex';
 
-        if (selectedOptionId && currentQuestion && currentQuestion.votingOpen && !isSubmitting) {
-          btnConfirm.disabled = false;
-          btnConfirm.innerHTML = '<span>🔒</span> Confirmar Meu Voto';
+        if (currentQuestion && currentQuestion.type === 'open') {
+          const inputVal = document.getElementById('openTextAnswerInput') ? document.getElementById('openTextAnswerInput').value.trim() : '';
+          if (inputVal.length > 0 && currentQuestion.votingOpen && !isSubmitting) {
+            btnConfirm.disabled = false;
+            btnConfirm.innerHTML = '<span>🔒</span> Enviar Resposta';
+          } else {
+            btnConfirm.disabled = true;
+            btnConfirm.innerHTML = '<span>✏️</span> Digite sua resposta';
+          }
         } else {
-          btnConfirm.disabled = true;
-          btnConfirm.innerHTML = '<span>👆</span> Selecione uma alternativa';
+          if (selectedOptionId && currentQuestion && currentQuestion.votingOpen && !isSubmitting) {
+            btnConfirm.disabled = false;
+            btnConfirm.innerHTML = '<span>🔒</span> Confirmar Meu Voto';
+          } else {
+            btnConfirm.disabled = true;
+            btnConfirm.innerHTML = '<span>👆</span> Selecione uma alternativa';
+          }
         }
       }
     }
 
     function confirmVote() {
-      if (!selectedOptionId || hasConfirmedVote || !currentQuestion || !currentQuestion.votingOpen || isSubmitting) return;
+      if (hasConfirmedVote || !currentQuestion || !currentQuestion.votingOpen || isSubmitting) return;
       hideError();
+
+      const isOpen = currentQuestion.type === 'open';
+      let textAnswerVal = '';
+
+      if (isOpen) {
+        const input = document.getElementById('openTextAnswerInput');
+        textAnswerVal = input ? input.value.trim() : '';
+        if (!textAnswerVal) {
+          showError('Por favor, digite sua resposta livre.');
+          return;
+        }
+      } else {
+        if (!selectedOptionId) return;
+      }
 
       isSubmitting = true;
       const btnConfirm = document.getElementById('btnConfirmVote');
       btnConfirm.disabled = true;
-      btnConfirm.innerHTML = '<span>⏳</span> Confirmando voto...';
+      btnConfirm.innerHTML = '<span>⏳</span> Enviando resposta...';
 
       const participantId = getParticipantId();
       const profileId = getProfileId();
@@ -745,36 +858,51 @@
         pollId: poll.id,
         questionId: currentQuestion.id,
         optionId: selectedOptionId,
+        textAnswer: textAnswerVal,
         participantId,
         profileId
       };
 
-      const handleVoteSuccess = () => {
+      const handleVoteSuccess = (resData) => {
         isSubmitting = false;
         hasConfirmedVote = true;
+
+        const resultObj = {
+          type: currentQuestion.type,
+          optionId: selectedOptionId,
+          textAnswer: textAnswerVal,
+          isCorrect: resData ? resData.isCorrect : false,
+          correctAnswer: resData ? resData.correctAnswer : ''
+        };
+
         const voteKey = `voted_${poll.id}_${currentQuestion.id}`;
-        localStorage.setItem(voteKey, selectedOptionId);
+        localStorage.setItem(voteKey, JSON.stringify(resultObj));
 
-        document.querySelectorAll('.option-btn').forEach(btn => {
-          btn.disabled = true;
-          btn.classList.remove('selected');
-        });
+        if (isOpen) {
+          const input = document.getElementById('openTextAnswerInput');
+          if (input) input.disabled = true;
+        } else {
+          document.querySelectorAll('.option-btn').forEach(btn => {
+            btn.disabled = true;
+            btn.classList.remove('selected');
+          });
 
-        const chosen = document.getElementById(`optBtn_${selectedOptionId}`);
-        if (chosen) {
-          chosen.classList.add('locked');
-          const icon = chosen.querySelector('.icon-tag');
-          if (icon) icon.textContent = '🔒 ✓';
+          const chosen = document.getElementById(`optBtn_${selectedOptionId}`);
+          if (chosen) {
+            chosen.classList.add('locked');
+            const icon = chosen.querySelector('.icon-tag');
+            if (icon) icon.textContent = '🔒 ✓';
+          }
         }
 
-        updateConfirmSectionUI();
+        updateConfirmSectionUI(resultObj);
       };
 
       const handleVoteError = (msg) => {
         isSubmitting = false;
         btnConfirm.disabled = false;
-        btnConfirm.innerHTML = '<span>🔒</span> Confirmar Meu Voto';
-        showError(msg || 'Não foi possível confirmar o voto.');
+        btnConfirm.innerHTML = isOpen ? '<span>🔒</span> Enviar Resposta' : '<span>🔒</span> Confirmar Meu Voto';
+        showError(msg || 'Não foi possível confirmar a resposta.');
       };
 
       const fallbackHttpVote = () => {
@@ -786,13 +914,13 @@
         .then(async res => {
           const data = await res.json().catch(() => ({}));
           if (res.ok && data.success) {
-            handleVoteSuccess();
+            handleVoteSuccess(data);
           } else {
-            handleVoteError(data.error || 'Erro ao registrar voto');
+            handleVoteError(data.error || 'Erro ao registrar resposta');
           }
         })
         .catch(err => {
-          handleVoteError(err.message || 'Erro de conexão ao enviar voto.');
+          handleVoteError(err.message || 'Erro de conexão ao enviar resposta.');
         });
       };
 
@@ -808,7 +936,7 @@
           ackReceived = true;
           clearTimeout(timeoutTimer);
           if (ack && ack.success) {
-            handleVoteSuccess();
+            handleVoteSuccess(ack);
           } else {
             handleVoteError(ack && ack.error);
           }
