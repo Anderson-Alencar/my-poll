@@ -6,16 +6,21 @@ const { Server } = require('socket.io');
 const { v4: uuidv4 } = require('uuid');
 const QRCode = require('qrcode');
 
+const fs = require('fs');
+
 // Initialize Express and HTTP server
 const app = express();
 const server = http.createServer(app);
 
-// Initialize Socket.IO with CORS enabled
+// Initialize Socket.IO with CORS enabled and robust connection keepalive
 const io = new Server(server, {
   cors: {
     origin: '*',
     methods: ['GET', 'POST', 'PUT', 'DELETE']
-  }
+  },
+  pingInterval: 10000, // Envia ping a cada 10s para manter conexão viva
+  pingTimeout: 25000,   // Tolera até 25s sem pong antes de considerar desconectado
+  connectTimeout: 20000
 });
 
 // Middleware configuration
@@ -24,7 +29,7 @@ app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ==========================================
-// In-Memory Data Storage
+// In-Memory Data Storage & Disk Persistence
 // ==========================================
 
 // pollId -> poll object
@@ -38,6 +43,132 @@ const participantCounts = new Map();
 
 // questionId -> { timer, pollId, question }
 const pendingVoteUpdates = new Map();
+
+// Persistent local storage path to survive container restarts & idle sleep
+const DATA_DIR = path.join(__dirname, 'data');
+const STORE_FILE = path.join(DATA_DIR, 'polls_store.json');
+
+if (!fs.existsSync(DATA_DIR)) {
+  try {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  } catch (err) {
+    console.error('Erro ao criar pasta data:', err);
+  }
+}
+
+let saveStoreTimeout = null;
+
+/**
+ * Persiste as enquetes e votos ativos em disco local para recuperar após reinicializações.
+ */
+function scheduleSaveStore() {
+  if (saveStoreTimeout) clearTimeout(saveStoreTimeout);
+  saveStoreTimeout = setTimeout(() => {
+    try {
+      const serializablePolls = [];
+      for (const poll of polls.values()) {
+        const questionsData = Array.isArray(poll.questions) ? poll.questions.map(q => {
+          const votesArray = [];
+          if (q.votes instanceof Map) {
+            for (const [pId, v] of q.votes.entries()) {
+              votesArray.push([pId, v]);
+            }
+          }
+          return {
+            id: q.id,
+            text: q.text,
+            type: q.type || 'multiple',
+            correctAnswer: q.correctAnswer || '',
+            orderNum: q.orderNum,
+            votingOpen: q.votingOpen,
+            options: q.options || [],
+            votes: votesArray
+          };
+        }) : [];
+
+        serializablePolls.push({
+          id: poll.id,
+          title: poll.title,
+          description: poll.description,
+          code: poll.code,
+          hasProfiles: poll.hasProfiles,
+          status: poll.status,
+          currentQuestionId: poll.currentQuestionId,
+          creatorId: poll.creatorId,
+          creatorEmail: poll.creatorEmail,
+          createdAt: poll.createdAt,
+          profiles: poll.profiles || [],
+          questions: questionsData
+        });
+      }
+
+      fs.writeFileSync(STORE_FILE, JSON.stringify(serializablePolls, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('Erro ao salvar polls_store no disco:', err);
+    }
+  }, 150);
+}
+
+/**
+ * Carrega enquetes e votos salvos no disco ao iniciar o servidor.
+ */
+function loadStoreFromDisk() {
+  try {
+    if (!fs.existsSync(STORE_FILE)) return;
+    const raw = fs.readFileSync(STORE_FILE, 'utf-8');
+    if (!raw.trim()) return;
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data)) return;
+
+    for (const pollData of data) {
+      if (!pollData || !pollData.id || !pollData.code) continue;
+
+      const restoredQuestions = Array.isArray(pollData.questions) ? pollData.questions.map(q => {
+        const votesMap = new Map();
+        if (Array.isArray(q.votes)) {
+          for (const [pId, v] of q.votes) {
+            votesMap.set(pId, v);
+          }
+        }
+        return {
+          id: q.id,
+          text: q.text,
+          type: q.type || 'multiple',
+          correctAnswer: q.correctAnswer || '',
+          orderNum: q.orderNum,
+          votingOpen: Boolean(q.votingOpen),
+          options: q.options || [],
+          votes: votesMap
+        };
+      }) : [];
+
+      const pollObj = {
+        id: pollData.id,
+        title: pollData.title || '',
+        description: pollData.description || '',
+        code: String(pollData.code).trim().toUpperCase(),
+        hasProfiles: Boolean(pollData.hasProfiles),
+        status: pollData.status || 'draft',
+        currentQuestionId: pollData.currentQuestionId || null,
+        creatorId: pollData.creatorId || null,
+        creatorEmail: pollData.creatorEmail || null,
+        createdAt: pollData.createdAt || new Date().toISOString(),
+        profiles: Array.isArray(pollData.profiles) ? pollData.profiles : [],
+        questions: restoredQuestions
+      };
+
+      polls.set(pollObj.id, pollObj);
+      accessCodes.set(pollObj.code, pollObj.id);
+    }
+
+    console.log(`[Persistência] ${polls.size} enquetes restauradas do disco com sucesso.`);
+  } catch (err) {
+    console.error('Erro ao carregar polls_store do disco:', err);
+  }
+}
+
+// Inicializa a recuperação a partir do disco
+loadStoreFromDisk();
 
 // ==========================================
 // Helper Functions
@@ -364,6 +495,7 @@ app.post('/api/polls', (req, res) => {
 
     polls.set(poll.id, poll);
     accessCodes.set(poll.code, poll.id);
+    scheduleSaveStore();
 
     return res.status(201).json(serializePoll(poll));
   } catch (err) {
@@ -433,6 +565,7 @@ app.post('/api/polls/sync', (req, res) => {
       });
     }
 
+    scheduleSaveStore();
     return res.json({ success: true, poll: serializePoll(existingPoll) });
   } catch (err) {
     console.error('Error syncing poll:', err);
@@ -463,7 +596,11 @@ app.get('/api/polls', (req, res) => {
 // 3. GET /api/polls/:id - Get poll with questions and options
 app.get('/api/polls/:id', (req, res) => {
   try {
-    const poll = polls.get(req.params.id);
+    let poll = polls.get(req.params.id);
+    if (!poll) {
+      loadStoreFromDisk();
+      poll = polls.get(req.params.id);
+    }
     if (!poll) {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
@@ -536,6 +673,7 @@ app.put('/api/polls/:id', (req, res) => {
       }));
     }
 
+    scheduleSaveStore();
     return res.json(serializePoll(poll));
   } catch (err) {
     console.error('Error updating poll:', err);
@@ -554,6 +692,7 @@ app.delete('/api/polls/:id', (req, res) => {
     accessCodes.delete(poll.code);
     polls.delete(poll.id);
     participantCounts.delete(poll.id);
+    scheduleSaveStore();
 
     return res.json({ success: true });
   } catch (err) {
@@ -612,6 +751,7 @@ app.post('/api/polls/:id/questions', (req, res) => {
     };
 
     poll.questions.push(question);
+    scheduleSaveStore();
 
     return res.status(201).json(serializeQuestion(question));
   } catch (err) {
@@ -695,6 +835,7 @@ app.put('/api/questions/:questionId', (req, res) => {
       }
     }
 
+    scheduleSaveStore();
     return res.json(serializeQuestion(question));
   } catch (err) {
     console.error('Error updating question:', err);
@@ -729,6 +870,7 @@ app.delete('/api/questions/:questionId', (req, res) => {
       pendingVoteUpdates.delete(req.params.questionId);
     }
 
+    scheduleSaveStore();
     return res.json({ success: true });
   } catch (err) {
     console.error('Error deleting question:', err);
@@ -739,7 +881,11 @@ app.delete('/api/questions/:questionId', (req, res) => {
 // 9. GET /api/polls/:id/results - Get all results
 app.get('/api/polls/:id/results', (req, res) => {
   try {
-    const poll = polls.get(req.params.id);
+    let poll = polls.get(req.params.id);
+    if (!poll) {
+      loadStoreFromDisk();
+      poll = polls.get(req.params.id);
+    }
     if (!poll) {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
@@ -761,7 +907,11 @@ app.get('/api/polls/:id/results', (req, res) => {
 // 10. GET /api/polls/:id/results/:questionId - Get results for specific question
 app.get('/api/polls/:id/results/:questionId', (req, res) => {
   try {
-    const poll = polls.get(req.params.id);
+    let poll = polls.get(req.params.id);
+    if (!poll) {
+      loadStoreFromDisk();
+      poll = polls.get(req.params.id);
+    }
     if (!poll) {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
@@ -780,17 +930,27 @@ app.get('/api/polls/:id/results/:questionId', (req, res) => {
   }
 });
 
-// 11. GET /api/polls/join/:code - Find poll by access code
+// 11. GET /api/polls/join/:code - Find poll by access code with disk recovery
 app.get('/api/polls/join/:code', (req, res) => {
   try {
     const code = String(req.params.code || '').trim().toUpperCase();
-    const pollId = accessCodes.get(code);
+    let pollId = accessCodes.get(code);
+
+    // Se não estiver na memória, recarrega do armazenamento persistente em disco (ex: após sleep/reinício)
+    if (!pollId) {
+      loadStoreFromDisk();
+      pollId = accessCodes.get(code);
+    }
 
     if (!pollId) {
       return res.status(404).json({ error: 'Código de enquete não encontrado' });
     }
 
-    const poll = polls.get(pollId);
+    let poll = polls.get(pollId);
+    if (!poll) {
+      loadStoreFromDisk();
+      poll = polls.get(pollId);
+    }
     if (!poll) {
       return res.status(404).json({ error: 'Enquete não encontrada' });
     }
@@ -834,6 +994,28 @@ app.get('/api/polls/join/:code', (req, res) => {
   } catch (err) {
     console.error('Error joining poll by code:', err);
     return res.status(500).json({ error: 'Erro ao buscar enquete pelo código' });
+  }
+});
+
+// 11.1 Keep-alive / Health & Heartbeat routes to prevent sleep during idle speeches
+app.get('/api/health', (req, res) => {
+  return res.json({ status: 'ok', uptime: process.uptime(), time: Date.now() });
+});
+
+app.get('/api/polls/heartbeat/:code', (req, res) => {
+  try {
+    const code = String(req.params.code || '').trim().toUpperCase();
+    let pollId = accessCodes.get(code);
+    if (!pollId) {
+      loadStoreFromDisk();
+      pollId = accessCodes.get(code);
+    }
+    if (!pollId) {
+      return res.status(404).json({ alive: true, found: false, error: 'Código não encontrado' });
+    }
+    return res.json({ alive: true, found: true, code, pollId });
+  } catch (e) {
+    return res.json({ alive: true, found: false });
   }
 });
 
@@ -932,6 +1114,7 @@ function registerVote({ pollId, questionId, optionId, textAnswer, participantId,
     });
 
     debounceVoteUpdate(pollId, question);
+    scheduleSaveStore();
 
     return {
       success: true,
@@ -960,6 +1143,7 @@ function registerVote({ pollId, questionId, optionId, textAnswer, participantId,
   });
 
   debounceVoteUpdate(pollId, question);
+  scheduleSaveStore();
 
   return { success: true, type: 'multiple', optionId };
 }
@@ -1012,6 +1196,7 @@ app.put('/api/polls/:id/status', (req, res) => {
       poll.questions.forEach(q => { q.votingOpen = false; });
       io.to(`poll:${poll.id}`).emit('poll-finished', { pollId: poll.id });
     }
+    scheduleSaveStore();
     return res.json(serializePoll(poll));
   } catch (err) {
     console.error('Error updating poll status:', err);
@@ -1045,6 +1230,7 @@ app.put('/api/polls/:id/current-question', (req, res) => {
     });
     io.to(`poll:${poll.id}`).emit('voting-opened', { questionId });
 
+    scheduleSaveStore();
     return res.json({ success: true, currentQuestion: serializeQuestion(question) });
   } catch (err) {
     console.error('Error changing current question:', err);
@@ -1152,6 +1338,7 @@ io.on('connection', socket => {
         question: serializeQuestion(question)
       });
       io.to(`poll:${pollId}`).emit('voting-opened', { questionId });
+      scheduleSaveStore();
     } catch (err) {
       console.error('Error in change-question:', err);
       socket.emit('error', { message: 'Erro ao alterar pergunta ativa' });
@@ -1174,6 +1361,7 @@ io.on('connection', socket => {
 
       question.votingOpen = true;
       io.to(`poll:${pollId}`).emit('voting-opened', { questionId });
+      scheduleSaveStore();
     } catch (err) {
       console.error('Error in open-voting:', err);
       socket.emit('error', { message: 'Erro ao abrir votação' });
@@ -1207,6 +1395,7 @@ io.on('connection', socket => {
       }
 
       io.to(`poll:${pollId}`).emit('voting-closed', { questionId });
+      scheduleSaveStore();
     } catch (err) {
       console.error('Error in close-voting:', err);
       socket.emit('error', { message: 'Erro ao fechar votação' });
@@ -1242,6 +1431,7 @@ io.on('connection', socket => {
       if (poll.currentQuestionId) {
         io.to(`poll:${pollId}`).emit('voting-opened', { questionId: poll.currentQuestionId });
       }
+      scheduleSaveStore();
     } catch (err) {
       console.error('Error in start-poll:', err);
       socket.emit('error', { message: 'Erro ao iniciar enquete' });
@@ -1265,6 +1455,7 @@ io.on('connection', socket => {
       });
 
       io.to(`poll:${pollId}`).emit('poll-finished', { pollId });
+      scheduleSaveStore();
     } catch (err) {
       console.error('Error in finish-poll:', err);
       socket.emit('error', { message: 'Erro ao finalizar enquete' });

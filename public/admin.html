@@ -1398,6 +1398,13 @@
         // Save in Firestore
         await savePollToFirestore(currentPoll);
 
+        // Prime and synchronize server memory
+        await fetch('/api/polls/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(currentPoll)
+        }).catch(() => {});
+
         // Update server
         await fetch(`/api/polls/${currentPoll.id}/status`, {
           method: 'PUT',
@@ -1430,6 +1437,13 @@
             q.votingOpen = (idx === 0);
           });
           await savePollToFirestore(pollData);
+
+          await fetch('/api/polls/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(pollData)
+          }).catch(() => {});
+
           await fetch(`/api/polls/${id}/status`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },

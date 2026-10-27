@@ -358,6 +358,12 @@
   </style>
 </head>
 <body>
+  <!-- Floating connection status badge -->
+  <div id="connectionToast" style="display: none; position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 9999; background: rgba(30, 41, 59, 0.95); border: 1px solid rgba(245, 158, 11, 0.4); color: #fbbf24; padding: 0.45rem 1rem; border-radius: 9999px; font-size: 0.8rem; font-weight: 600; box-shadow: 0 4px 15px rgba(0, 0, 0, 0.5); align-items: center; gap: 0.5rem; backdrop-filter: blur(8px);">
+    <span class="spinner" style="display: inline-block; width: 12px; height: 12px; border: 2px solid #fbbf24; border-top-color: transparent; border-radius: 50%; animation: spin 1s linear infinite;"></span>
+    <span id="connectionToastText">Aguardando sinal da apresentação...</span>
+  </div>
+
   <div class="container">
     <!-- Header -->
     <div class="header-card" id="headerCard">
@@ -373,7 +379,7 @@
     <div class="screen active" id="screenLoading">
       <div class="message-card">
         <div class="spinner"></div>
-        <p style="color: var(--text-muted);">Conectando à sessão de votação...</p>
+        <p style="color: var(--text-muted);" id="loadingText">Conectando à sessão de votação...</p>
       </div>
     </div>
 
@@ -523,13 +529,45 @@
 
     function showError(msg) {
       const b = document.getElementById('errorBanner');
-      b.textContent = msg;
+      b.innerHTML = `
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 0.65rem;">
+          <span>${escapeHtml(msg)}</span>
+          <button type="button" onclick="retryConnection()" style="background: rgba(255, 255, 255, 0.2); border: 1px solid rgba(255, 255, 255, 0.35); color: white; border-radius: 9999px; padding: 0.4rem 0.95rem; font-size: 0.85rem; font-weight: 700; cursor: pointer; display: inline-flex; align-items: center; gap: 0.4rem;">
+            <span>🔄</span> Tentar Conectar Novamente
+          </button>
+        </div>
+      `;
       b.style.display = 'block';
     }
 
     function hideError() {
-      document.getElementById('errorBanner').style.display = 'none';
+      const b = document.getElementById('errorBanner');
+      b.style.display = 'none';
+      b.innerHTML = '';
     }
+
+    function showConnectionToast(msg) {
+      const toast = document.getElementById('connectionToast');
+      if (toast) {
+        if (msg) document.getElementById('connectionToastText').textContent = msg;
+        toast.style.display = 'inline-flex';
+      }
+    }
+
+    function hideConnectionToast() {
+      const toast = document.getElementById('connectionToast');
+      if (toast) toast.style.display = 'none';
+    }
+
+    window.retryConnection = function() {
+      initRetryCount = 0;
+      hideError();
+      showScreen('screenLoading');
+      init();
+    };
+
+    let initRetryCount = 0;
+    const MAX_INIT_RETRIES = 6;
 
     async function init() {
       if (!code) {
@@ -538,35 +576,64 @@
       }
 
       document.getElementById('badgeCode').textContent = `CÓDIGO: ${code}`;
+      hideError();
 
-      try {
-        const res = await fetch(`/api/polls/join/${code}`);
-        const data = await res.json();
-
-        if (!res.ok) {
-          throw new Error(data.error || 'Enquete não encontrada com este código');
-        }
-
-        poll = data;
-        if (poll.currentQuestion) currentQuestion = poll.currentQuestion;
-        document.getElementById('pollTitleDisplay').textContent = poll.title;
-
-        // Check if profiles are needed and not yet selected
-        if (poll.hasProfiles && !hasValidProfileSelected()) {
-          renderProfileSelection();
-        } else {
-          if (poll.hasProfiles && hasValidProfileSelected()) {
-            const pObj = poll.profiles.find(p => p.id === getProfileId());
-            if (pObj) showProfileBadge(pObj.name);
+      const attemptJoin = async () => {
+        try {
+          const loadingText = document.getElementById('loadingText');
+          if (loadingText && initRetryCount > 0) {
+            loadingText.textContent = `Aguardando sinal da apresentação... (${initRetryCount}/${MAX_INIT_RETRIES})`;
           }
-          checkReadyToVote();
-        }
 
-        connectSocket();
-      } catch (err) {
-        showScreen('screenLoading');
-        showError(err.message);
-      }
+          const res = await fetch(`/api/polls/join/${code}`);
+          const data = await res.json().catch(() => ({}));
+
+          if (res.ok && data && data.id) {
+            hideError();
+            hideConnectionToast();
+            initRetryCount = 0;
+            poll = data;
+            if (poll.currentQuestion) currentQuestion = poll.currentQuestion;
+            document.getElementById('pollTitleDisplay').textContent = poll.title;
+
+            // Check if profiles are needed and not yet selected
+            if (poll.hasProfiles && !hasValidProfileSelected()) {
+              renderProfileSelection();
+            } else {
+              if (poll.hasProfiles && hasValidProfileSelected()) {
+                const pObj = poll.profiles.find(p => p.id === getProfileId());
+                if (pObj) showProfileBadge(pObj.name);
+              }
+              checkReadyToVote();
+            }
+
+            connectSocket();
+            return;
+          }
+
+          // Se recebeu 404 (ex: servidor acordando ou apresentador sincronizando), tenta novamente
+          if (initRetryCount < MAX_INIT_RETRIES) {
+            initRetryCount++;
+            showScreen('screenLoading');
+            setTimeout(attemptJoin, 2000);
+            return;
+          }
+
+          showScreen('screenLoading');
+          showError(data.error || 'Código de enquete não encontrado.');
+        } catch (err) {
+          if (initRetryCount < MAX_INIT_RETRIES) {
+            initRetryCount++;
+            showScreen('screenLoading');
+            setTimeout(attemptJoin, 2000);
+            return;
+          }
+          showScreen('screenLoading');
+          showError('Falha ao conectar ao servidor. Verifique sua conexão com a internet.');
+        }
+      };
+
+      attemptJoin();
     }
 
     function renderProfileSelection() {
@@ -949,104 +1016,129 @@
     function connectSocket() {
       try {
         if (typeof io !== 'function') return;
+        if (socket) return;
+
         socket = io({
           transports: ['websocket', 'polling'],
-          timeout: 4000,
-          reconnectionAttempts: 5
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 4000,
+          timeout: 20000
         });
 
         socket.on('connect', () => {
-          socket.emit('join-poll', { pollId: poll.id, role: 'participant' });
+          hideConnectionToast();
+          if (poll && poll.id) {
+            socket.emit('join-poll', { pollId: poll.id, role: 'participant' });
+          }
           syncPollStatus();
         });
 
-      socket.on('poll-state', ({ status, currentQuestion: serverQuestion }) => {
-        if (status) poll.status = status;
+        socket.on('disconnect', (reason) => {
+          showConnectionToast('Reconectando à apresentação...');
+          if (reason === 'io server disconnect') {
+            socket.connect();
+          }
+        });
 
-        // Se ainda não escolheu perfil, a tela de perfil permanece prioritária e obrigatória
-        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
-          renderProfileSelection();
-          return;
-        }
+        socket.on('connect_error', () => {
+          showConnectionToast('Aguardando sinal da apresentação...');
+        });
 
-        if (status === 'finished') {
-          showScreen('screenFinished');
-        } else if (status === 'active' && serverQuestion) {
-          if (!currentQuestion || currentQuestion.id !== serverQuestion.id) {
-            loadQuestion(serverQuestion);
-          } else if (!currentQuestion.votingOpen && serverQuestion.votingOpen) {
+        socket.on('poll-state', ({ status, currentQuestion: serverQuestion }) => {
+          hideConnectionToast();
+          if (status) poll.status = status;
+
+          // Se ainda não escolheu perfil, a tela de perfil permanece prioritária e obrigatória
+          if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+            renderProfileSelection();
+            return;
+          }
+
+          if (status === 'finished') {
+            showScreen('screenFinished');
+          } else if (status === 'active' && serverQuestion) {
+            if (!currentQuestion || currentQuestion.id !== serverQuestion.id) {
+              loadQuestion(serverQuestion);
+            } else if (!currentQuestion.votingOpen && serverQuestion.votingOpen) {
+              currentQuestion.votingOpen = true;
+              updateVotingIndicator(true);
+            }
+          } else if (status === 'active' && !serverQuestion) {
+            showScreen('screenWaiting');
+          } else {
+            showScreen('screenWaiting');
+          }
+        });
+
+        socket.on('poll-started', (data) => {
+          hideConnectionToast();
+          poll.status = 'active';
+          const question = data && data.question;
+
+          if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+            renderProfileSelection();
+            return;
+          }
+
+          if (question) {
+            loadQuestion(question);
+          } else {
+            syncPollStatus();
+          }
+        });
+
+        socket.on('question-changed', ({ question }) => {
+          hideConnectionToast();
+          if (!question) return;
+          poll.status = 'active';
+
+          if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
+            renderProfileSelection();
+            return;
+          }
+
+          if (!currentQuestion || currentQuestion.id !== question.id) {
+            loadQuestion(question);
+          } else if (!currentQuestion.votingOpen && question.votingOpen) {
             currentQuestion.votingOpen = true;
             updateVotingIndicator(true);
           }
-        } else if (status === 'active' && !serverQuestion) {
-          showScreen('screenWaiting');
-        } else {
-          showScreen('screenWaiting');
-        }
-      });
+        });
 
-      socket.on('poll-started', (data) => {
-        poll.status = 'active';
-        const question = data && data.question;
+        socket.on('voting-opened', ({ questionId }) => {
+          if (currentQuestion && currentQuestion.id === questionId) {
+            currentQuestion.votingOpen = true;
+            updateVotingIndicator(true);
+          }
+        });
 
-        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
-          renderProfileSelection();
-          return;
-        }
+        socket.on('voting-closed', ({ questionId }) => {
+          if (currentQuestion && currentQuestion.id === questionId) {
+            currentQuestion.votingOpen = false;
+            updateVotingIndicator(false);
+          }
+        });
 
-        if (question) {
-          loadQuestion(question);
-        } else {
-          syncPollStatus();
-        }
-      });
-
-      socket.on('question-changed', ({ question }) => {
-        if (!question) return;
-        poll.status = 'active';
-
-        if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
-          renderProfileSelection();
-          return;
-        }
-
-        if (!currentQuestion || currentQuestion.id !== question.id) {
-          loadQuestion(question);
-        } else if (!currentQuestion.votingOpen && question.votingOpen) {
-          currentQuestion.votingOpen = true;
-          updateVotingIndicator(true);
-        }
-      });
-
-      socket.on('voting-opened', ({ questionId }) => {
-        if (currentQuestion && currentQuestion.id === questionId) {
-          currentQuestion.votingOpen = true;
-          updateVotingIndicator(true);
-        }
-      });
-
-      socket.on('voting-closed', ({ questionId }) => {
-        if (currentQuestion && currentQuestion.id === questionId) {
-          currentQuestion.votingOpen = false;
-          updateVotingIndicator(false);
-        }
-      });
-
-      socket.on('poll-finished', () => {
-        poll.status = 'finished';
-        showScreen('screenFinished');
-      });
+        socket.on('poll-finished', () => {
+          poll.status = 'finished';
+          showScreen('screenFinished');
+        });
       } catch (err) {
         console.warn('Socket.IO connection unavailable, using HTTP sync:', err);
       }
     }
 
     async function syncPollStatus() {
+      if (!code) return;
       try {
         const res = await fetch(`/api/polls/join/${code}`);
         if (res.ok) {
+          hideConnectionToast();
           const freshData = await res.json();
-          poll.status = freshData.status;
+          if (!poll) poll = freshData;
+          else poll.status = freshData.status;
 
           if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
             renderProfileSelection();
@@ -1066,20 +1158,46 @@
           } else if (freshData.status === 'draft') {
             showScreen('screenWaiting');
           }
+        } else {
+          // Mantém tela do usuário intacta e mostra indicador suave de reconexão
+          showConnectionToast('Aguardando sinal da apresentação...');
         }
       } catch (e) {
-        // Silent error
+        showConnectionToast('Aguardando sinal da apresentação...');
       }
     }
 
-    // Auto-sync polling every 1.5s so participant screen is always in lockstep with the presenter
+    // Auto-sync polling every 2s so participant screen is always in lockstep with the presenter
     setInterval(() => {
-      if (!poll) return;
-      if (poll.hasProfiles && !hasValidProfileSelected()) {
+      if (!code) return;
+      if (poll && poll.hasProfiles && !hasValidProfileSelected()) {
         return;
       }
       syncPollStatus();
-    }, 1500);
+    }, 2000);
+
+    // Heartbeat ping a cada 10s para manter a conexão e container Cloud Run sempre acordados
+    setInterval(() => {
+      if (!code) return;
+      fetch(`/api/polls/heartbeat/${code}`).catch(() => {});
+    }, 10000);
+
+    // Reatividade a foco, visibilidade da tela e reconexão de rede (ex: desbloqueio de celular)
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        syncPollStatus();
+        if (socket && !socket.connected) {
+          socket.connect();
+        }
+      }
+    });
+
+    window.addEventListener('online', () => {
+      syncPollStatus();
+      if (socket && !socket.connected) {
+        socket.connect();
+      }
+    });
 
     function escapeHtml(text) {
       if (!text) return '';

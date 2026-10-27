@@ -856,16 +856,25 @@
           document.getElementById('presenterName').textContent = user.displayName || 'Apresentador';
         }
 
-        // Prime the server memory for real-time Socket.IO
-        await fetch('/api/polls/sync', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(poll)
-        }).catch(() => {});
+        // Prime the server memory for real-time Socket.IO and persist
+        await syncPollToServer();
 
         initPresentation();
       } catch (err) {
         console.error('Error checking access:', err);
+      }
+    }
+
+    async function syncPollToServer() {
+      if (!poll) return;
+      try {
+        await fetch('/api/polls/sync', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(poll)
+        });
+      } catch (e) {
+        // silent sync retry
       }
     }
 
@@ -921,12 +930,16 @@
         if (typeof io !== 'function') return;
         socket = io({
           transports: ['websocket', 'polling'],
-          timeout: 4000,
-          reconnectionAttempts: 5
+          reconnection: true,
+          reconnectionAttempts: Infinity,
+          reconnectionDelay: 1000,
+          reconnectionDelayMax: 5000,
+          timeout: 20000
         });
 
         socket.on('connect', () => {
           socket.emit('join-poll', { pollId, role: 'presenter' });
+          syncPollToServer();
         });
 
         socket.on('participant-count', ({ count }) => {
@@ -979,6 +992,28 @@
       }
     }
 
+    // Heartbeat contínuo para manter o servidor ativo e o estado da enquete sincronizado
+    setInterval(() => {
+      syncPollToServer();
+    }, 12000);
+
+    // Quando a aba volta a ter foco ou tela do dispositivo acorda
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        syncPollToServer();
+        if (socket && !socket.connected) {
+          socket.connect();
+        }
+      }
+    });
+
+    window.addEventListener('online', () => {
+      syncPollToServer();
+      if (socket && !socket.connected) {
+        socket.connect();
+      }
+    });
+
     // Fallback polling for results if WebSocket connection drops or on serverless hosting (e.g. Vercel)
     setInterval(async () => {
       const qScreen = document.getElementById('screenQuestion');
@@ -993,6 +1028,9 @@
                 currentResults = freshRes;
                 renderBars();
               }
+            } else if (res.status === 404) {
+              // Se o servidor reiniciou durante uma fala longa, re-sincroniza a enquete imediatamente
+              await syncPollToServer();
             }
           } catch (e) {
             // silent fallback
@@ -1026,6 +1064,8 @@
     async function displayCurrentQuestion() {
       const q = poll.questions[currentQuestionIndex];
       if (!q) return;
+
+      showRecentAnswers = false;
 
       const totalQ = poll.questions.length;
       document.getElementById('qCounter').textContent = `Pergunta ${currentQuestionIndex + 1} de ${totalQ}`;
@@ -1063,7 +1103,7 @@
       }
     }
 
-    let showRecentAnswers = true;
+    let showRecentAnswers = false;
 
     window.toggleRecentAnswers = function() {
       showRecentAnswers = !showRecentAnswers;
@@ -1135,7 +1175,7 @@
 
               ${!showRecentAnswers ? `
                 <div style="font-size: 0.9rem; color: #64748b; font-style: italic; display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0;">
-                  <span>🔒 Visibilidade das respostas individuais desativada pelo apresentador.</span>
+                  <span>🔒 Respostas ocultadas por padrão (clique no botão acima para exibir).</span>
                 </div>
               ` : recent.length === 0 ? `
                 <div style="font-size: 0.9rem; color: #64748b; font-style: italic; padding: 0.5rem 0;">Aguardando envio das respostas pelos participantes...</div>
